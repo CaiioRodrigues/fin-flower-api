@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FinFlower.Api/FinFlower.Api.csproj" />
+    <Project Path="src/FinFlower.Application/FinFlower.Application.csproj" />
+    <Project Path="src/FinFlower.Domain/FinFlower.Domain.csproj" />
+    <Project Path="src/FinFlower.Infrastructure/FinFlower.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FinFlower.Api.Tests/FinFlower.Api.Tests.csproj" />
+    <Project Path="tests/FinFlower.Application.Tests/FinFlower.Application.Tests.csproj" />
+    <Project Path="tests/FinFlower.Domain.Tests/FinFlower.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

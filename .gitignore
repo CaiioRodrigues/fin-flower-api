@@ -1,0 +1,36 @@
+# Build
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Segredos: nunca versionar
+appsettings.Local.json
+appsettings.*.Local.json
+*.pfx
+*.key
+.env
+.env.*
+!.env.example
+
+# IDE
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Testes
+TestResults/
+coverage*.json
+coverage*.xml
+*.trx
