@@ -128,20 +128,46 @@ os dados: Exibir → **Pesquisador de Objetos do SQL Server** →
 Abre o Swagger em `https://localhost:7046/swagger`. A API também escuta em
 `http://localhost:5212`.
 
-### Alternativa: SQL Server em container
-
-Se preferir container ao LocalDB:
+## Como rodar com Docker
 
 ```bash
-cp .env.example .env
-docker compose up -d
+cp .env.example .env    # defina MSSQL_SA_PASSWORD e JWT_SIGNING_KEY
+docker compose up -d --build
+```
+
+Sobe o SQL Server e a API em `http://localhost:5212`. A API espera o banco ficar
+saudável antes de subir e aplica as migrations sozinha — no container não há quem
+rode `Update-Database` antes.
+
+O compose falha na hora se `MSSQL_SA_PASSWORD` ou `JWT_SIGNING_KEY` não estiverem
+definidas, em vez de subir com um valor padrão inseguro.
+
+```bash
+docker compose logs -f api    # acompanhar
+docker compose down           # parar (o volume do banco fica)
+docker compose down -v        # parar e apagar os dados
+```
+
+### Só o banco em container
+
+Para desenvolver no Visual Studio mas sem instalar SQL Server:
+
+```bash
+docker compose up -d sqlserver
 ```
 
 E troque a connection string de desenvolvimento por:
 
 ```
-Server=localhost,1433;Database=FinFlower;User Id=sa;Password=Your_password123;TrustServerCertificate=True
+Server=localhost,1433;Database=FinFlower;User Id=sa;Password=<sua senha>;TrustServerCertificate=True
 ```
+
+### Migrations no start
+
+`Database:MigrateOnStartup` aplica as migrations pendentes quando a aplicação
+sobe. O padrão é **false** e o compose a liga explicitamente. Em produção o schema
+deve ser aplicado por um passo próprio do deploy, não por uma instância que acabou
+de subir — duas instâncias subindo juntas migrariam o mesmo banco ao mesmo tempo.
 
 ### Pela linha de comando
 
