@@ -18,16 +18,15 @@ Caixa geral = soma do resultado de todos os eventos
 
 ## Estado atual
 
-Esta etapa entrega a fundação: estrutura em camadas, modelo de domínio completo
-(usuário, evento, lançamento) e o fluxo de autenticação de ponta a ponta.
-
 | Área | Situação |
 |---|---|
 | Solution em 4 camadas + testes | pronto |
-| Domínio de evento e lançamento | pronto (regras e testes) |
+| Domínio de evento e lançamento | pronto |
 | Migration inicial (SQL Server) | pronto |
 | Autenticação: registro, login, refresh, logout, `/me` | pronto |
-| Endpoints de evento, lançamento e relatório de caixa | próxima etapa |
+| Eventos e lançamentos (CRUD, fechar/reabrir) | pronto |
+| Relatório de caixa consolidado | pronto |
+| Front-end consumindo a API | próxima etapa |
 
 ## Arquitetura
 
@@ -54,8 +53,20 @@ Decisões que sustentam o desenho:
   fluxo fica na assinatura do método, e a tradução para HTTP acontece num lugar só.
 - **Dinheiro é `decimal(18,2)`**, com o valor sempre positivo e o sentido no campo
   `Type`. Nada de `double` e nada de valor negativo espalhado pelos relatórios.
+- **Leitura separada da escrita.** `IEventRepository` devolve o agregado para as
+  regras do domínio; `IEventQueries` projeta direto para DTO, então a listagem e o
+  caixa somam no banco em vez de carregar todos os lançamentos para a memória.
+- **Todo dado é filtrado pelo dono na própria consulta.** O `ownerId` vem do token e
+  entra no `WHERE`, não numa checagem posterior — evento de outra pessoa responde 404.
 - **Nome de código em inglês, mensagens ao usuário em português.** O front segue a
   mesma divisão.
+
+### Erro esperado x invariante violada
+
+Desfecho esperado da aplicação (não encontrado, sessão inválida, período invertido)
+volta como `Result` e vira o status correspondente. Violação de invariante — lançar
+em evento fechado, valor não positivo — é lançada pelo domínio como `DomainException`
+e o middleware devolve 400. Assim o domínio não precisa confiar em quem o chama.
 
 ## Segurança
 
@@ -69,6 +80,7 @@ Decisões que sustentam o desenho:
 | Força bruta | Bloqueio da conta por 15 min após 5 falhas + limite por IP nas rotas de credencial |
 | Enumeração de usuário | Resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
 | Autorização | O id do usuário vem sempre do token, nunca do corpo ou da URL |
+| IDOR | Evento de outro usuário responde 404 em toda rota, sem revelar que o id existe |
 | Entrada | FluentValidation antes de qualquer regra de negócio, erro por campo em `ProblemDetails` |
 | Injeção de SQL | EF Core parametrizado; nenhuma query montada por concatenação |
 | Vazamento por erro | 500 genérico ao cliente; detalhe e stack trace só no log |
@@ -116,7 +128,7 @@ Swagger em `/swagger` (somente em desenvolvimento).
 
 ```bash
 dotnet build     # warnings são tratados como erro
-dotnet test      # 64 testes
+dotnet test      # 98 testes
 ```
 
 Nova migration:
@@ -137,18 +149,61 @@ dotnet ef migrations add NomeDaMigration \
 | `POST` | `/api/auth/refresh` | — | Troca o refresh token por um novo par |
 | `POST` | `/api/auth/logout` | — | Revoga o refresh token informado |
 | `GET` | `/api/auth/me` | Bearer | Dados do usuário autenticado |
+| `GET` | `/api/events` | Bearer | Lista os eventos com os totais de cada um |
+| `POST` | `/api/events` | Bearer | Cria um evento |
+| `GET` | `/api/events/{id}` | Bearer | Abre o evento com todos os seus lançamentos |
+| `PUT` | `/api/events/{id}` | Bearer | Altera os dados do evento |
+| `DELETE` | `/api/events/{id}` | Bearer | Exclui o evento (exclusão lógica) |
+| `POST` | `/api/events/{id}/close` | Bearer | Fecha o evento e congela o resultado |
+| `POST` | `/api/events/{id}/reopen` | Bearer | Reabre um evento fechado |
+| `POST` | `/api/events/{id}/entries` | Bearer | Cadastra um lançamento no evento |
+| `PUT` | `/api/events/{id}/entries/{entryId}` | Bearer | Altera um lançamento |
+| `DELETE` | `/api/events/{id}/entries/{entryId}` | Bearer | Remove um lançamento |
+| `GET` | `/api/reports/cash` | Bearer | Caixa consolidado |
 | `GET` | `/health` | — | Disponibilidade |
+
+A listagem aceita `?from=`, `?to=` e `?status=Open|Closed`; o caixa aceita `?from=` e `?to=`.
+Enums viajam como texto no JSON (`"Income"`, `"Expense"`, `"Open"`, `"Closed"`).
+
+### Exemplo do caixa
+
+```json
+GET /api/reports/cash
+
+{
+  "totalIncome": 40800.00,
+  "totalExpense": 26800.00,
+  "balance": 14000.00,
+  "eventCount": 5,
+  "profitableEventCount": 3,
+  "unprofitableEventCount": 2,
+  "breakEvenEventCount": 0,
+  "events": [
+    {
+      "eventId": "01a05ec7-...",
+      "name": "Show de rock",
+      "eventDate": "2026-07-10",
+      "totalIncome": 12000.00,
+      "totalExpense": 7000.00,
+      "result": 5000.00,
+      "isProfitable": true
+    }
+  ]
+}
+```
 
 ## Testes
 
 | Projeto | Cobre |
 |---|---|
 | `FinFlower.Domain.Tests` | Resultado do evento, evento fechado, validação de lançamento, bloqueio de conta, ciclo do refresh token |
-| `FinFlower.Application.Tests` | Casos de uso de autenticação sobre banco em memória, e o hash de senha |
-| `FinFlower.Api.Tests` | A aplicação real via HTTP: pipeline, JWT, validação, cabeçalhos e limite de requisições |
+| `FinFlower.Application.Tests` | Casos de uso de autenticação, evento e caixa; isolamento entre contas; hash de senha; tradução das consultas para SQL Server |
+| `FinFlower.Api.Tests` | A aplicação real via HTTP: pipeline, JWT, validação, cabeçalhos, limite de requisições e as rotas de evento e relatório |
 
 Os testes de API sobem o mesmo `Program.cs` de produção, trocando apenas o SQL
-Server por um banco em memória.
+Server por um banco em memória. Como o provedor em memória aceita qualquer LINQ,
+`SqlTranslationTests` monta as consultas contra o provedor real do SQL Server só
+para garantir que todas viram SQL de verdade.
 
 ## Padrão de código
 

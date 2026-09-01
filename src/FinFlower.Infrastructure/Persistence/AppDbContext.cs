@@ -2,6 +2,7 @@ using FinFlower.Application.Common;
 using FinFlower.Domain.Common;
 using FinFlower.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace FinFlower.Infrastructure.Persistence;
 
@@ -16,6 +17,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, IDateTi
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        // As entidades geram o próprio Id (Guid v7) no construtor. Sem isto o EF
+        // trata a chave já preenchida como "registro existente" e marca uma
+        // entidade nova como Modified — o insert vira um update que falha.
+        foreach (var key in modelBuilder.Model.GetEntityTypes()
+                     .Select(entity => entity.FindProperty(nameof(Entity.Id)))
+                     .Where(property => property is not null))
+        {
+            key!.ValueGenerated = ValueGenerated.Never;
+        }
+
         base.OnModelCreating(modelBuilder);
     }
 

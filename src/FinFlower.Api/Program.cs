@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using FinFlower.Api.Endpoints;
 using FinFlower.Api.Middleware;
@@ -115,6 +116,9 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
@@ -151,6 +155,8 @@ app.UseAuthorization();
 
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
+app.MapEventEndpoints();
+app.MapReportEndpoints();
 
 app.Run();
 

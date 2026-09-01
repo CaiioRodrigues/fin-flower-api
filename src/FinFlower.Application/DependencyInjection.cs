@@ -1,4 +1,6 @@
 using FinFlower.Application.Auth;
+using FinFlower.Application.Events;
+using FinFlower.Application.Reports;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,6 +12,8 @@ public static class DependencyInjection
     {
         services.AddValidatorsFromAssemblyContaining<DependencyInjectionMarker>(ServiceLifetime.Singleton);
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IEventService, EventService>();
+        services.AddScoped<ICashReportService, CashReportService>();
 
         return services;
     }

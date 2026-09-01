@@ -1,6 +1,7 @@
 using FinFlower.Application.Abstractions;
 using FinFlower.Application.Common;
 using FinFlower.Infrastructure.Persistence;
+using FinFlower.Infrastructure.Persistence.Queries;
 using FinFlower.Infrastructure.Persistence.Repositories;
 using FinFlower.Infrastructure.Security;
 using FinFlower.Infrastructure.Time;
@@ -31,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IEventRepository, EventRepository>();
+        services.AddScoped<IEventQueries, EventQueries>();
 
         // Valida as opções na subida do processo: chave JWT ausente ou curta
         // derruba a aplicação no start, não na primeira tentativa de login.
