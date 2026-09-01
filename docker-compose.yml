@@ -4,7 +4,7 @@ services:
     container_name: fin-flower-sqlserver
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Your_password123}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?defina MSSQL_SA_PASSWORD no .env}
       MSSQL_PID: Developer
     ports:
       - "1433:1433"
@@ -21,6 +21,26 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+
+  api:
+    build:
+      context: .
+    container_name: fin-flower-api
+    depends_on:
+      sqlserver:
+        # Sem esta condição a API tentaria conectar antes do banco aceitar.
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Dentro da rede do compose o host do banco é o nome do serviço.
+      ConnectionStrings__Default: "Server=sqlserver,1433;Database=FinFlower;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=True"
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?defina JWT_SIGNING_KEY no .env}
+      # Não há quem rode Update-Database aqui: a aplicação aplica as migrations.
+      Database__MigrateOnStartup: "true"
+      # Origem do front — o navegador chama a API pela porta publicada no host.
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+    ports:
+      - "5212:8080"
 
 volumes:
   sqlserver-data:

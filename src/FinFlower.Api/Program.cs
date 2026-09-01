@@ -6,6 +6,8 @@ using FinFlower.Api.Security;
 using FinFlower.Application;
 using FinFlower.Application.Common;
 using FinFlower.Infrastructure;
+using FinFlower.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
@@ -152,6 +154,16 @@ app.UseCors(CorsPolicy);
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Em container não há quem rode 'Update-Database' antes de subir, então a própria
+// aplicação aplica as migrations pendentes — mas só quando explicitamente
+// configurada para isso. O padrão é false: em produção o schema é aplicado por
+// um passo próprio do deploy, não por uma instância que acabou de subir.
+if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+}
 
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();

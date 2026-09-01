@@ -89,40 +89,102 @@ e o middleware devolve 400. Assim o domínio não precisa confiar em quem o cham
 | Segredos | `user-secrets` em dev, variável de ambiente em produção; validados na subida |
 | Auditoria | `CreatedAt`/`UpdatedAt` automáticos e exclusão lógica em tudo |
 
-## Como rodar
+## Como rodar no Visual Studio
 
-**1. Suba o SQL Server**
+O banco de desenvolvimento é o **LocalDB**, que já vem instalado com o Visual
+Studio — não precisa de container nem de senha de `sa`. A connection string em
+`appsettings.Development.json` já aponta para ele.
 
-```bash
-cp .env.example .env
-docker compose up -d
+**1. Defina a chave do JWT**
+
+Ela não vai para o repositório. No Visual Studio: clique com o botão direito no
+projeto `FinFlower.Api` → **Gerenciar Segredos do Usuário**, e cole:
+
+```json
+{
+  "Jwt": {
+    "SigningKey": "troque-por-uma-chave-longa-e-aleatoria-de-32-caracteres-ou-mais"
+  }
+}
 ```
 
-**2. Configure os segredos** (não vão para o repositório)
+Sem isso a aplicação nem sobe: a chave é validada na inicialização.
 
-```bash
-cd src/FinFlower.Api
-dotnet user-secrets init
-dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -base64 48)"
+**2. Crie o banco**
+
+No **Console do Gerenciador de Pacotes** (Exibir → Outras Janelas), com
+`FinFlower.Api` como projeto de inicialização:
+
+```powershell
+Update-Database -Project src\FinFlower.Infrastructure -StartupProject src\FinFlower.Api
 ```
 
-A connection string de desenvolvimento já aponta para o container do compose. Em
-produção, use variáveis de ambiente: `ConnectionStrings__Default` e `Jwt__SigningKey`.
+O LocalDB cria o banco `FinFlower` sozinho na primeira execução. Para inspecionar
+os dados: Exibir → **Pesquisador de Objetos do SQL Server** →
+`(localdb)\MSSQLLocalDB`.
 
-**3. Aplique as migrations**
+**3. Rode (F5)**
+
+Abre o Swagger em `https://localhost:7046/swagger`. A API também escuta em
+`http://localhost:5212`.
+
+## Como rodar com Docker
 
 ```bash
+cp .env.example .env    # defina MSSQL_SA_PASSWORD e JWT_SIGNING_KEY
+docker compose up -d --build
+```
+
+Sobe o SQL Server e a API em `http://localhost:5212`. A API espera o banco ficar
+saudável antes de subir e aplica as migrations sozinha — no container não há quem
+rode `Update-Database` antes.
+
+O compose falha na hora se `MSSQL_SA_PASSWORD` ou `JWT_SIGNING_KEY` não estiverem
+definidas, em vez de subir com um valor padrão inseguro.
+
+```bash
+docker compose logs -f api    # acompanhar
+docker compose down           # parar (o volume do banco fica)
+docker compose down -v        # parar e apagar os dados
+```
+
+### Só o banco em container
+
+Para desenvolver no Visual Studio mas sem instalar SQL Server:
+
+```bash
+docker compose up -d sqlserver
+```
+
+E troque a connection string de desenvolvimento por:
+
+```
+Server=localhost,1433;Database=FinFlower;User Id=sa;Password=<sua senha>;TrustServerCertificate=True
+```
+
+### Migrations no start
+
+`Database:MigrateOnStartup` aplica as migrations pendentes quando a aplicação
+sobe. O padrão é **false** e o compose a liga explicitamente. Em produção o schema
+deve ser aplicado por um passo próprio do deploy, não por uma instância que acabou
+de subir — duas instâncias subindo juntas migrariam o mesmo banco ao mesmo tempo.
+
+### Pela linha de comando
+
+```bash
+dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -base64 48)" --project src/FinFlower.Api
 dotnet tool install --global dotnet-ef
 dotnet ef database update --project src/FinFlower.Infrastructure --startup-project src/FinFlower.Api
-```
-
-**4. Rode**
-
-```bash
 dotnet run --project src/FinFlower.Api
 ```
 
-Swagger em `/swagger` (somente em desenvolvimento).
+Em produção, tudo por variável de ambiente: `ConnectionStrings__Default` e
+`Jwt__SigningKey`.
+
+### Ligando o front
+
+O front roda em `http://localhost:5173`, origem que já está liberada no CORS de
+desenvolvimento. No `.env.local` dele: `VITE_API_URL=http://localhost:5212`.
 
 ## Comandos
 
@@ -138,6 +200,12 @@ dotnet ef migrations add NomeDaMigration \
   --project src/FinFlower.Infrastructure \
   --startup-project src/FinFlower.Api \
   --output-dir Persistence/Migrations
+```
+
+Ou, no Console do Gerenciador de Pacotes:
+
+```powershell
+Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProject src\FinFlower.Api -OutputDir Persistence\Migrations
 ```
 
 ## Endpoints
