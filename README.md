@@ -110,20 +110,21 @@ projeto `FinFlower.Api` → **Gerenciar Segredos do Usuário**, e cole:
 
 Sem isso a aplicação nem sobe: a chave é validada na inicialização.
 
-**2. Crie o banco**
+**2. Rode (F5)**
 
-No **Console do Gerenciador de Pacotes** (Exibir → Outras Janelas), com
-`FinFlower.Api` como projeto de inicialização:
+O banco `FinFlower` é criado na primeira execução: em desenvolvimento a aplicação
+aplica as migrations ao subir (`Database:MigrateOnStartup`). Não é preciso rodar
+nada antes.
+
+Para inspecionar os dados: Exibir → **Pesquisador de Objetos do SQL Server** →
+`(localdb)\MSSQLLocalDB` → Bancos de Dados → `FinFlower`. Se o banco não
+aparecer, clique com o botão direito no nó e escolha **Atualizar**.
+
+Se preferir criar o banco à mão, no **Console do Gerenciador de Pacotes**:
 
 ```powershell
 Update-Database -Project src\FinFlower.Infrastructure -StartupProject src\FinFlower.Api
 ```
-
-O LocalDB cria o banco `FinFlower` sozinho na primeira execução. Para inspecionar
-os dados: Exibir → **Pesquisador de Objetos do SQL Server** →
-`(localdb)\MSSQLLocalDB`.
-
-**3. Rode (F5)**
 
 Abre o Swagger em `https://localhost:7046/swagger`. A API também escuta em
 `http://localhost:5212`.
