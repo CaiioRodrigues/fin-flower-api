@@ -1,0 +1,69 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,csx}]
+indent_size = 4
+max_line_length = 120
+
+# Organização de usings
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:warning
+
+# Estilo moderno de C#
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_prefer_braces = when_multiline:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+
+# Imutabilidade e clareza
+dotnet_style_readonly_field = true:warning
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+dotnet_style_prefer_auto_properties = true:warning
+csharp_prefer_static_local_function = true:suggestion
+
+# Nomenclatura
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_prefix
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_prefix.required_prefix = _
+dotnet_naming_style.underscore_prefix.capitalization = camel_case
+
+# Usings desnecessários são erro: código morto não entra no repositório.
+dotnet_diagnostic.IDE0005.severity = error
+
+# IDE0032 sugere auto-property mesmo quando o acessor tem lógica própria
+# (Result<T>.Value lança ao ser lido em falha). Fica como sugestão, não erro.
+dotnet_diagnostic.IDE0032.severity = suggestion
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.{csproj,props,targets}]
+indent_size = 2
+
+[tests/**/*.cs]
+# Nome de teste com underscore é a convenção que torna a saída do runner legível:
+# "Closed_event_rejects_new_entries" diz mais do que "ClosedEventRejectsNewEntries".
+dotnet_diagnostic.CA1707.severity = none
+
+# Classes aninhadas e tipos auxiliares de teste não precisam seguir as regras de API pública.
+dotnet_diagnostic.CA1034.severity = none
+dotnet_diagnostic.CA1861.severity = none
+
+[**/Migrations/*.cs]
+# Migrations são código gerado pelo EF: não faz sentido cobrar estilo de algo
+# que será reescrito pela ferramenta a cada alteração de modelo.
+generated_code = true
+dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.CA1861.severity = none

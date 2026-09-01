@@ -1,0 +1,32 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Referência nula é o erro mais comum em C#; aqui ela é erro de compilação. -->
+    <Nullable>enable</Nullable>
+
+    <!-- Warning acumulado vira warning ignorado. O build falha em vez disso. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Exigido pelo IDE0005 (using desnecessário) para rodar no build. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!--
+      CS1591: não exigimos XML doc em todo membro público; o código comenta o
+              "porquê", não repete o "o quê".
+      CA1716: 'Event' colide com a palavra reservada de outras linguagens, mas é o
+              termo do domínio e a API é consumida por HTTP, não por outra CLR.
+    -->
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>
