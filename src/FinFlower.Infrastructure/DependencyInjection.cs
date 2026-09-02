@@ -34,6 +34,8 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IEventQueries, EventQueries>();
+        services.AddScoped<IContractRepository, ContractRepository>();
+        services.AddScoped<IContractQueries, ContractQueries>();
 
         // Valida as opções na subida do processo: chave JWT ausente ou curta
         // derruba a aplicação no start, não na primeira tentativa de login.

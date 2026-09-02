@@ -21,8 +21,10 @@ public sealed class Entry : AuditableEntity
         string description,
         decimal amount,
         string category,
-        DateOnly occurredOn)
+        DateOnly occurredOn,
+        Guid? installmentId = null)
     {
+        InstallmentId = installmentId;
         EventId = eventId;
         Type = type;
         Description = Guard.AgainstNullOrWhiteSpace(description, "descrição", MaxDescriptionLength);
@@ -40,6 +42,15 @@ public sealed class Entry : AuditableEntity
 
     public string Category { get; private set; } = null!;
     public DateOnly OccurredOn { get; private set; }
+
+    /// <summary>
+    /// Parcela que originou este lançamento, quando ele veio de um contrato.
+    /// Enquanto existir, o lançamento não pode ser removido nem alterado por
+    /// fora: quem manda é a parcela, e estornar lá desfaz os dois juntos.
+    /// </summary>
+    public Guid? InstallmentId { get; private set; }
+
+    public bool ComesFromContract => InstallmentId is not null;
 
     /// <summary>Valor com sinal, para somatórios: receita positiva, despesa negativa.</summary>
     public decimal SignedAmount => Type == EntryType.Income ? Amount : -Amount;

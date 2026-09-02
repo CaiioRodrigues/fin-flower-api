@@ -6,12 +6,18 @@ caixa consolidado.
 
 ```
 Evento (Festa de Ano Novo, 12/12)
-  ├── Entrada: Venda de ingressos    R$ 8.000
-  ├── Saída:   Aluguel do espaço     R$ 3.000
-  └── Saída:   Buffet                R$ 2.500
-        → Resultado: +R$ 2.500 (lucro)
+  ├── Lançamentos ......... realizado: o que já entrou e saiu
+  │     ├── Entrada: Venda de ingressos    R$ 8.000
+  │     └── Saída:   Buffet                R$ 2.500
+  │
+  └── Contratos ........... previsto: o que foi acordado
+        └── Prefeitura — R$ 9.000 em 3x, boleto, PDF anexado
+              ├── 1/3  R$ 3.000  05/10  liquidada → virou lançamento
+              ├── 2/3  R$ 3.000  05/11  em aberto
+              └── 3/3  R$ 3.000  05/12  em aberto
 
-Caixa geral = soma do resultado de todos os eventos
+Caixa       = soma do resultado dos eventos (realizado)
+Fluxo de caixa = realizado + parcelas em aberto por mês
 ```
 
 .NET 10 (LTS), SQL Server, EF Core.
@@ -26,7 +32,9 @@ Caixa geral = soma do resultado de todos os eventos
 | Autenticação: registro, login, refresh, logout, `/me` | pronto |
 | Eventos e lançamentos (CRUD, fechar/reabrir) | pronto |
 | Relatório de caixa consolidado | pronto |
-| Front-end consumindo a API | próxima etapa |
+| Contratos parcelados, com PDF anexado | pronto |
+| Fluxo de caixa: vencidos, mês corrente e previsão | pronto |
+| Front-end para contratos e fluxo de caixa | próxima etapa |
 
 ## Arquitetura
 
@@ -61,6 +69,25 @@ Decisões que sustentam o desenho:
 - **Nome de código em inglês, mensagens ao usuário em português.** O front segue a
   mesma divisão.
 
+### Realizado x previsto
+
+**Lançamento** é o que já aconteceu; **parcela de contrato** é o que foi acordado
+e ainda vai acontecer. Liquidar uma parcela cria o lançamento correspondente e
+guarda o vínculo, então o mesmo dinheiro nunca é contado duas vezes — e estornar
+desfaz os dois juntos. Um lançamento que veio de contrato não pode ser alterado
+nem removido por fora: quem manda é a parcela.
+
+Contrato é raiz de agregação própria, não parte do evento. Se vivesse dentro
+dele, abrir um evento carregaria os PDFs junto.
+
+**Parcela vencida é lido da data, não guardado.** Nenhuma rotina precisa varrer o
+banco à meia-noite para virar status.
+
+**A soma das parcelas é sempre igual ao contratado.** Dividir e arredondar cada
+uma perderia centavos: R$ 1.000 em 3x daria 333,33 três vezes e o contrato
+fecharia em 999,99. A divisão é feita em centavos inteiros e a sobra vai para as
+últimas parcelas — 333,33 / 333,33 / 333,34.
+
 ### Erro esperado x invariante violada
 
 Desfecho esperado da aplicação (não encontrado, sessão inválida, período invertido)
@@ -88,6 +115,10 @@ e o middleware devolve 400. Assim o domínio não precisa confiar em quem o cham
 | CORS | Lista explícita de origens, nunca `AllowAnyOrigin` |
 | Segredos | `user-secrets` em dev, variável de ambiente em produção; validados na subida |
 | Auditoria | `CreatedAt`/`UpdatedAt` automáticos e exclusão lógica em tudo |
+| Upload de arquivo | Assinatura `%PDF` conferida no conteúdo, não na extensão nem no content-type que o cliente declara |
+| Download de arquivo | Servido sempre como `application/pdf`: deixar o navegador interpretar um arquivo do usuário como HTML seria um XSS |
+| Nome de arquivo | Só o nome, sem caminho — `../../web.config` não vira travessia de diretório |
+| Tamanho do upload | Recusado antes da leitura, para um arquivo enorme não ocupar memória até o domínio rejeitá-lo |
 
 ## Como rodar no Visual Studio
 
@@ -191,7 +222,7 @@ desenvolvimento. No `.env.local` dele: `VITE_API_URL=http://localhost:5212`.
 
 ```bash
 dotnet build     # warnings são tratados como erro
-dotnet test      # 98 testes
+dotnet test      # 153 testes
 ```
 
 Nova migration:
@@ -228,7 +259,17 @@ Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProj
 | `POST` | `/api/events/{id}/entries` | Bearer | Cadastra um lançamento no evento |
 | `PUT` | `/api/events/{id}/entries/{entryId}` | Bearer | Altera um lançamento |
 | `DELETE` | `/api/events/{id}/entries/{entryId}` | Bearer | Remove um lançamento |
-| `GET` | `/api/reports/cash` | Bearer | Caixa consolidado |
+| `GET` | `/api/reports/cash` | Bearer | Caixa consolidado (realizado) |
+| `GET` | `/api/reports/cash-flow` | Bearer | Fluxo de caixa: vencidos, mês corrente e previsão |
+| `POST` | `/api/events/{id}/contracts` | Bearer | Cria um contrato com as parcelas geradas |
+| `GET` | `/api/contracts` | Bearer | Lista contratos, com o quanto já foi liquidado |
+| `GET` `PUT` `DELETE` | `/api/contracts/{id}` | Bearer | Abre, altera e exclui |
+| `POST` | `/api/contracts/{id}/installments/{n}/settle` | Bearer | Liquida e gera o lançamento |
+| `POST` | `/api/contracts/{id}/installments/{n}/unsettle` | Bearer | Estorna e remove o lançamento |
+| `POST` | `/api/contracts/{id}/installments/{n}/cancel` | Bearer | Cancela a parcela |
+| `PUT` | `/api/contracts/{id}/installments/{n}/due-date` | Bearer | Altera o vencimento |
+| `PUT` | `/api/contracts/{id}/installments/{n}/amount` | Bearer | Altera o valor, redistribuindo a diferença |
+| `POST` `GET` `DELETE` | `/api/contracts/{id}/document` | Bearer | Anexa, baixa e remove o PDF |
 | `GET` | `/health` | — | Disponibilidade |
 
 A listagem aceita `?from=`, `?to=` e `?status=Open|Closed`; o caixa aceita `?from=` e `?to=`.
@@ -265,9 +306,9 @@ GET /api/reports/cash
 
 | Projeto | Cobre |
 |---|---|
-| `FinFlower.Domain.Tests` | Resultado do evento, evento fechado, validação de lançamento, bloqueio de conta, ciclo do refresh token |
-| `FinFlower.Application.Tests` | Casos de uso de autenticação, evento e caixa; isolamento entre contas; hash de senha; tradução das consultas para SQL Server |
-| `FinFlower.Api.Tests` | A aplicação real via HTTP: pipeline, JWT, validação, cabeçalhos, limite de requisições e as rotas de evento e relatório |
+| `FinFlower.Domain.Tests` | Resultado do evento, evento fechado, validação de lançamento, bloqueio de conta, ciclo do refresh token, divisão de parcelas sem perder centavos |
+| `FinFlower.Application.Tests` | Casos de uso de autenticação, evento, contrato e caixa; liquidação ligando previsto e realizado; isolamento entre contas; hash de senha; tradução das consultas para SQL Server |
+| `FinFlower.Api.Tests` | A aplicação real via HTTP: pipeline, JWT, validação, cabeçalhos, limite de requisições, CORS, rotas de evento e contrato, e o upload de PDF |
 
 Os testes de API sobem o mesmo `Program.cs` de produção, trocando apenas o SQL
 Server por um banco em memória. Como o provedor em memória aceita qualquer LINQ,

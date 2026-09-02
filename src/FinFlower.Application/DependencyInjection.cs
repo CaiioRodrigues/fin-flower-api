@@ -1,4 +1,5 @@
 using FinFlower.Application.Auth;
+using FinFlower.Application.Contracts;
 using FinFlower.Application.Events;
 using FinFlower.Application.Reports;
 using FluentValidation;
@@ -14,6 +15,8 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<ICashReportService, CashReportService>();
+        services.AddScoped<IContractService, ContractService>();
+        services.AddScoped<ICashFlowReportService, CashFlowReportService>();
 
         return services;
     }
