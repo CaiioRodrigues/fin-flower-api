@@ -66,10 +66,11 @@ public sealed class Event : AuditableEntity
         string description,
         decimal amount,
         string category,
-        DateOnly occurredOn)
+        DateOnly occurredOn,
+        Guid? installmentId = null)
     {
         EnsureOpen();
-        var entry = new Entry(Id, type, description, amount, category, occurredOn);
+        var entry = new Entry(Id, type, description, amount, category, occurredOn, installmentId);
         _entries.Add(entry);
         return entry;
     }
@@ -83,10 +84,36 @@ public sealed class Event : AuditableEntity
         DateOnly occurredOn)
     {
         EnsureOpen();
-        FindEntry(entryId).Update(type, description, amount, category, occurredOn);
+
+        var entry = FindEntry(entryId);
+        if (entry.ComesFromContract)
+        {
+            throw new DomainException(
+                "Este lançamento veio de uma parcela de contrato. Ajuste a parcela para alterá-lo.");
+        }
+
+        entry.Update(type, description, amount, category, occurredOn);
     }
 
     public void RemoveEntry(Guid entryId, DateTimeOffset now)
+    {
+        EnsureOpen();
+
+        var entry = FindEntry(entryId);
+        if (entry.ComesFromContract)
+        {
+            throw new DomainException(
+                "Este lançamento veio de uma parcela de contrato. Estorne a parcela para removê-lo.");
+        }
+
+        entry.MarkAsDeleted(now);
+    }
+
+    /// <summary>
+    /// Remove o lançamento gerado por uma parcela. Só o estorno da parcela chega
+    /// aqui — a remoção comum recusa lançamentos de contrato.
+    /// </summary>
+    public void RemoveContractEntry(Guid entryId, DateTimeOffset now)
     {
         EnsureOpen();
         FindEntry(entryId).MarkAsDeleted(now);

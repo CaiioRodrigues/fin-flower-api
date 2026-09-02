@@ -13,6 +13,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, IDateTi
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<Entry> Entries => Set<Entry>();
+    public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<Installment> Installments => Set<Installment>();
+    public DbSet<ContractAttachment> ContractAttachments => Set<ContractAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

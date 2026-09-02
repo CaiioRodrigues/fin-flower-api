@@ -1,3 +1,4 @@
+using FinFlower.Application.Contracts;
 using FinFlower.Application.Events;
 using FinFlower.Application.Reports;
 using FinFlower.Infrastructure.Persistence;
@@ -35,6 +36,19 @@ public sealed class EventTestContext : IDisposable
             Context);
 
         CashReport = new CashReportService(queries, CurrentUser);
+
+        var contractQueries = new ContractQueries(Context);
+        var eventRepository = new EventRepository(Context);
+
+        Contracts = new ContractService(
+            new ContractRepository(Context),
+            contractQueries,
+            eventRepository,
+            CurrentUser,
+            Clock,
+            Context);
+
+        CashFlow = new CashFlowReportService(contractQueries, CurrentUser, Clock);
     }
 
     public FakeClock Clock { get; }
@@ -42,6 +56,8 @@ public sealed class EventTestContext : IDisposable
     public AppDbContext Context { get; }
     public IEventService Events { get; }
     public ICashReportService CashReport { get; }
+    public IContractService Contracts { get; }
+    public ICashFlowReportService CashFlow { get; }
 
     /// <summary>Passa a agir como o usuário informado (ou um novo).</summary>
     public Guid ActAs(Guid? userId = null)
