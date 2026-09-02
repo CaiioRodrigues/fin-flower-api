@@ -3,6 +3,7 @@ using FinFlower.Application.Common;
 using FinFlower.Infrastructure.Persistence;
 using FinFlower.Infrastructure.Persistence.Queries;
 using FinFlower.Infrastructure.Persistence.Repositories;
+using FinFlower.Infrastructure.Reports;
 using FinFlower.Infrastructure.Security;
 using FinFlower.Infrastructure.Time;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,14 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
+        // QuestPDF exige declarar a licença antes do primeiro uso. A Community é
+        // gratuita para empresas abaixo do faturamento anual que a licença define;
+        // acima disso, é preciso adquirir a versão paga.
+        QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
+        services.AddSingleton<IReportWriter, ExcelReportWriter>();
+        services.AddSingleton<IReportWriter, PdfReportWriter>();
 
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();

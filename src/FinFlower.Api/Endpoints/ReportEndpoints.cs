@@ -1,5 +1,7 @@
 using FinFlower.Api.Extensions;
+using FinFlower.Application.Common;
 using FinFlower.Application.Reports;
+using FinFlower.Application.Reports.Export;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FinFlower.Api.Endpoints;
@@ -18,7 +20,67 @@ public static class ReportEndpoints
         reports.MapGet("/cash-flow", GetCashFlow)
             .WithSummary("Fluxo de caixa: vencidos, o mês corrente e a previsão dos próximos.");
 
+        reports.MapGet("/cash/export", ExportCash)
+            .WithSummary("Baixa o caixa por evento em xlsx ou pdf.");
+
+        reports.MapGet("/cash-flow/export", ExportCashFlow)
+            .WithSummary("Baixa o fluxo de caixa em xlsx ou pdf.");
+
+        reports.MapGet("/installments/export", ExportInstallments)
+            .WithSummary("Baixa as parcelas em aberto, a receber e a pagar, em xlsx ou pdf.");
+
+        app.MapGet("/api/events/{eventId:guid}/statement/export", ExportStatement)
+            .WithTags("Relatórios")
+            .WithSummary("Baixa o extrato do evento, com lançamentos, contratos e parcelas.")
+            .RequireAuthorization();
+
         return app;
+    }
+
+    private static async Task<IResult> ExportCash(
+        IReportExportService service,
+        CancellationToken cancellationToken,
+        [FromQuery] string format = "xlsx",
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null) =>
+        await Export(format, chosen => service.ExportCashAsync(chosen, from, to, cancellationToken));
+
+    private static async Task<IResult> ExportCashFlow(
+        IReportExportService service,
+        CancellationToken cancellationToken,
+        [FromQuery] string format = "xlsx",
+        [FromQuery] int monthsAhead = 6) =>
+        await Export(format, chosen => service.ExportCashFlowAsync(chosen, monthsAhead, cancellationToken));
+
+    private static async Task<IResult> ExportInstallments(
+        IReportExportService service,
+        CancellationToken cancellationToken,
+        [FromQuery] string format = "xlsx") =>
+        await Export(format, chosen => service.ExportInstallmentsAsync(chosen, cancellationToken));
+
+    private static async Task<IResult> ExportStatement(
+        Guid eventId,
+        IReportExportService service,
+        CancellationToken cancellationToken,
+        [FromQuery] string format = "pdf") =>
+        await Export(format, chosen => service.ExportEventStatementAsync(eventId, chosen, cancellationToken));
+
+    /// <summary>Traduz o formato pedido e devolve o arquivo como download.</summary>
+    private static async Task<IResult> Export(
+        string format,
+        Func<ReportFormat, Task<Result<ReportFile>>> export)
+    {
+        if (!Enum.TryParse<ReportFormat>(format, ignoreCase: true, out var chosen))
+        {
+            return Results.Problem(
+                title: "Requisição inválida",
+                detail: "Formato inválido. Use 'xlsx' ou 'pdf'.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await export(chosen);
+
+        return result.ToHttpResult(file => Results.File(file.Content, file.ContentType, file.FileName));
     }
 
     private static async Task<IResult> GetCashFlow(

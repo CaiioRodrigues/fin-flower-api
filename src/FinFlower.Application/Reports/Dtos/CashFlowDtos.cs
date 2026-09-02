@@ -9,6 +9,7 @@ public sealed record ScheduledInstallmentResponse(
     string EventName,
     string Counterparty,
     ContractDirection Direction,
+    PaymentMethod PaymentMethod,
     int Number,
     decimal Amount,
     DateOnly DueDate,

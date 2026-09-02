@@ -146,6 +146,7 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
                     .First(),
                 context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.Counterparty).First(),
                 context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.Direction).First(),
+                context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.PaymentMethod).First(),
                 i.Number,
                 i.Amount,
                 i.DueDate))
@@ -199,11 +200,13 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
         string EventName,
         string Counterparty,
         ContractDirection Direction,
+        PaymentMethod PaymentMethod,
         int Number,
         decimal Amount,
         DateOnly DueDate)
     {
         public ScheduledInstallmentResponse ToResponse(bool isOverdue) => new(
-            ContractId, EventId, EventName, Counterparty, Direction, Number, Amount, DueDate, isOverdue);
+            ContractId, EventId, EventName, Counterparty, Direction, PaymentMethod,
+            Number, Amount, DueDate, isOverdue);
     }
 }

@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<ICashReportService, CashReportService>();
         services.AddScoped<IContractService, ContractService>();
         services.AddScoped<ICashFlowReportService, CashFlowReportService>();
+        services.AddScoped<IReportExportService, ReportExportService>();
 
         return services;
     }
