@@ -34,6 +34,7 @@ Fluxo de caixa = realizado + parcelas em aberto por mês
 | Relatório de caixa consolidado | pronto |
 | Contratos parcelados, com PDF anexado | pronto |
 | Fluxo de caixa: vencidos, mês corrente e previsão | pronto |
+| Exportação dos relatórios em Excel e PDF | pronto |
 | Front-end para contratos e fluxo de caixa | próxima etapa |
 
 ## Arquitetura
@@ -87,6 +88,27 @@ banco à meia-noite para virar status.
 uma perderia centavos: R$ 1.000 em 3x daria 333,33 três vezes e o contrato
 fecharia em 999,99. A divisão é feita em centavos inteiros e a sobra vai para as
 últimas parcelas — 333,33 / 333,33 / 333,34.
+
+### Relatórios exportados
+
+Um relatório é montado como `ReportDocument` — um modelo neutro de métricas e
+tabelas com colunas tipadas. `ExcelReportWriter` e `PdfReportWriter` apenas
+renderizam esse modelo, então **um relatório novo não encosta nos geradores**.
+
+No Excel, valor vai como número e data como data, com formato aplicado por cima:
+texto formatado impediria somar, ordenar e usar tabela dinâmica, que é o motivo de
+exportar para planilha. Cada tabela vira uma aba, com cabeçalho congelado e filtro.
+
+No PDF, colunas de valor, data e contagem têm largura fixa — coluna proporcional
+deixava `R$ 2.666,67` quebrar em duas linhas quando havia muito texto ao lado.
+
+### Licença do QuestPDF
+
+A geração de PDF usa **QuestPDF** sob a licença **Community**, declarada em
+`AddInfrastructure`. Ela é gratuita para organizações abaixo do faturamento anual
+definido pela licença; acima disso é preciso adquirir a versão paga. Vale conferir
+em <https://www.questpdf.com/license/> antes de usar em produção. O Excel usa
+**ClosedXML**, que é MIT e sem restrição.
 
 ### Erro esperado x invariante violada
 
@@ -222,7 +244,7 @@ desenvolvimento. No `.env.local` dele: `VITE_API_URL=http://localhost:5212`.
 
 ```bash
 dotnet build     # warnings são tratados como erro
-dotnet test      # 153 testes
+dotnet test      # 165 testes
 ```
 
 Nova migration:
@@ -261,6 +283,10 @@ Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProj
 | `DELETE` | `/api/events/{id}/entries/{entryId}` | Bearer | Remove um lançamento |
 | `GET` | `/api/reports/cash` | Bearer | Caixa consolidado (realizado) |
 | `GET` | `/api/reports/cash-flow` | Bearer | Fluxo de caixa: vencidos, mês corrente e previsão |
+| `GET` | `/api/reports/cash/export` | Bearer | Caixa por evento em `xlsx` ou `pdf` |
+| `GET` | `/api/reports/cash-flow/export` | Bearer | Fluxo de caixa em `xlsx` ou `pdf` |
+| `GET` | `/api/reports/installments/export` | Bearer | Parcelas em aberto em `xlsx` ou `pdf` |
+| `GET` | `/api/events/{id}/statement/export` | Bearer | Extrato do evento em `xlsx` ou `pdf` |
 | `POST` | `/api/events/{id}/contracts` | Bearer | Cria um contrato com as parcelas geradas |
 | `GET` | `/api/contracts` | Bearer | Lista contratos, com o quanto já foi liquidado |
 | `GET` `PUT` `DELETE` | `/api/contracts/{id}` | Bearer | Abre, altera e exclui |
@@ -308,7 +334,7 @@ GET /api/reports/cash
 |---|---|
 | `FinFlower.Domain.Tests` | Resultado do evento, evento fechado, validação de lançamento, bloqueio de conta, ciclo do refresh token, divisão de parcelas sem perder centavos |
 | `FinFlower.Application.Tests` | Casos de uso de autenticação, evento, contrato e caixa; liquidação ligando previsto e realizado; isolamento entre contas; hash de senha; tradução das consultas para SQL Server |
-| `FinFlower.Api.Tests` | A aplicação real via HTTP: pipeline, JWT, validação, cabeçalhos, limite de requisições, CORS, rotas de evento e contrato, e o upload de PDF |
+| `FinFlower.Api.Tests` | A aplicação real via HTTP: pipeline, JWT, validação, cabeçalhos, limite de requisições, CORS, rotas de evento e contrato, o upload de PDF, e os relatórios exportados abertos e conferidos célula a célula |
 
 Os testes de API sobem o mesmo `Program.cs` de produção, trocando apenas o SQL
 Server por um banco em memória. Como o provedor em memória aceita qualquer LINQ,
