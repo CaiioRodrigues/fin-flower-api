@@ -9,6 +9,7 @@ using FinFlower.Infrastructure;
 using FinFlower.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
@@ -80,16 +81,13 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // --- CORS -------------------------------------------------------------------
-const string CorsPolicy = "frontend";
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddOptions<CorsSettings>()
+    .Bind(builder.Configuration.GetSection(CorsSettings.SectionName));
 
-builder.Services.AddCors(options =>
-    options.AddPolicy(CorsPolicy, policy => policy
-        // Lista explícita de origens: AllowAnyOrigin abriria a API para
-        // qualquer site chamar em nome do usuário.
-        .WithOrigins(allowedOrigins)
-        .WithHeaders("Authorization", "Content-Type")
-        .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE")));
+builder.Services.AddCors();
+
+// A política vive em ConfigureCorsOptions e é resolvida pelo DI.
+builder.Services.AddSingleton<IConfigureOptions<CorsOptions>, ConfigureCorsOptions>();
 
 // --- Documentação -----------------------------------------------------------
 builder.Services.AddEndpointsApiExplorer();
@@ -150,7 +148,7 @@ else
     app.UseHttpsRedirection();
 }
 
-app.UseCors(CorsPolicy);
+app.UseCors(ConfigureCorsOptions.PolicyName);
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
