@@ -123,6 +123,28 @@ O total de cada linha é arredondado **antes** da soma, porque o cliente confere
 linha a linha: `3 × R$ 33,33 = R$ 99,99`. Guardar `33,333` e arredondar no fim
 daria R$ 100,00 numa linha que mostra R$ 33,33, e o centavo ficaria inexplicável.
 
+### Realizado e previsto na mesma linha do tempo
+
+`/api/cash/monthly` devolve uma série só: meses passados pelo que de fato se
+moveu, meses futuros pelo que está previsto. A janela padrão é **centrada no mês
+corrente** — seis para trás e seis para a frente —, porque um caixa serve tanto
+para ver de onde se veio quanto para saber se dá para pagar as contas do
+trimestre.
+
+O previsto tem **duas fontes**, e ignorar qualquer uma delas dá um número
+otimista: as parcelas de contrato em aberto (o que entra) e os itens fixos que
+ainda não viraram lançamento (o aluguel e o pró-labore que vão sair de qualquer
+jeito). Contar só as parcelas mostraria dinheiro entrando sem o custo que vem
+junto.
+
+Duas regras que decorrem disso:
+
+- **Mês passado não tem previsto.** O que aconteceu, aconteceu; prever o passado
+  inventaria despesa que já foi paga ou nunca existiu.
+- **Vencido sai à parte.** Uma parcela que venceu em julho e não foi paga não é
+  previsão de julho nem de nenhum mês futuro: é dívida de agora. Somá-la a um
+  mês inflaria um mês que já fechou ou um mês que não a espera.
+
 ### Realizado x previsto
 
 **Lançamento** é o que já aconteceu; **parcela de contrato** é o que foi acordado
@@ -154,6 +176,14 @@ exportar para planilha. Cada tabela vira uma aba, com cabeçalho congelado e fil
 
 No PDF, colunas de valor, data e contagem têm largura fixa — coluna proporcional
 deixava `R$ 2.666,67` quebrar em duas linhas quando havia muito texto ao lado.
+Quando a soma dessas larguras não cabe na página, o gerador **encolhe todas na
+mesma proporção**, junto com a fonte. Sem isso o caixa mês a mês, com dez colunas
+de dinheiro, derrubava a geração inteira com 500 em vez de apertar a tabela.
+
+Um detalhe que só aparece abrindo o arquivo: o rótulo `Resultado por evento` não
+é "caixa". Aquele relatório soma apenas o que está preso a um evento, e a maior
+parte do custo de um mês — aluguel, contador, pró-labore — não está. Chamá-lo de
+saldo daria um número que discorda do caixa mensal.
 
 ### Licença do QuestPDF
 
@@ -351,7 +381,7 @@ Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProj
 | `POST` | `/api/quotes/{id}/send` \| `/reject` \| `/reopen` | Bearer | Move o orçamento pelo fluxo |
 | `POST` | `/api/quotes/{id}/approve` | Bearer | Aprova e gera o contrato com as parcelas |
 | `GET` | `/api/reports/monthly/export` | Bearer | Caixa mês a mês em `xlsx` ou `pdf` |
-| `GET` | `/api/reports/cash` | Bearer | Caixa consolidado por evento |
+| `GET` | `/api/reports/cash` | Bearer | Resultado por evento (não é o saldo do caixa) |
 | `GET` | `/api/reports/cash-flow` | Bearer | Fluxo de caixa: vencidos, mês corrente e previsão |
 | `GET` | `/api/reports/cash/export` | Bearer | Caixa por evento em `xlsx` ou `pdf` |
 | `GET` | `/api/reports/cash-flow/export` | Bearer | Fluxo de caixa em `xlsx` ou `pdf` |

@@ -1,6 +1,8 @@
 using FinFlower.Application.Abstractions;
 using FinFlower.Application.Cash.Dtos;
 using FinFlower.Application.Common;
+using FinFlower.Application.Recurring.Dtos;
+using FinFlower.Domain.Entities;
 using FinFlower.Domain.Enums;
 using FinFlower.Domain.ValueObjects;
 
@@ -12,18 +14,31 @@ public interface IMonthlyCashService
 }
 
 /// <summary>
-/// O caixa completo, mês a mês. Uma consulta agrupada traz os totais e a
-/// composição acontece aqui: o saldo de cada mês é o fechamento do anterior,
-/// então a leitura de cima a baixo conta a história do dinheiro sem que a tela
-/// precise somar nada.
+/// O caixa completo numa linha do tempo só: meses passados pelo que de fato se
+/// moveu, meses futuros pelo que está previsto.
+///
+/// O previsto tem duas fontes, e ignorar qualquer uma delas dá um número
+/// otimista: as parcelas de contrato em aberto (o que entra) e os itens fixos
+/// que ainda não viraram lançamento (o aluguel e o pró-labore que vão sair de
+/// qualquer jeito). Contar só as parcelas mostraria dinheiro entrando sem o
+/// custo que vem junto.
 /// </summary>
 public sealed class MonthlyCashService(
     IEntryQueries queries,
+    IContractQueries contracts,
+    IRecurringItemRepository recurringItems,
     ICurrentUser currentUser,
     IDateTimeProvider clock) : IMonthlyCashService
 {
     /// <summary>Doze meses é a janela que a tela abre por padrão.</summary>
     public const int DefaultMonths = 12;
+
+    /// <summary>
+    /// Quantos dos doze ficam no futuro. A janela é centrada no mês corrente
+    /// porque um caixa serve tanto para ver de onde se veio quanto para saber
+    /// se dá para pagar as contas do trimestre.
+    /// </summary>
+    public const int DefaultMonthsAhead = 6;
 
     /// <summary>Teto do intervalo: cinco anos de uma vez já é relatório, não tela.</summary>
     public const int MaxMonths = 60;
@@ -44,16 +59,40 @@ public sealed class MonthlyCashService(
 
         var (start, end) = range.Value;
 
+        var today = Today;
+        var current = YearMonth.From(today);
+
         var opening = await queries.GetBalanceBeforeAsync(ownerId, start, ct);
         var buckets = await queries.GetMonthlyBucketsAsync(ownerId, start, end, ct);
 
-        return Result.Success(Compose(start, end, opening, buckets));
+        // O previsto só é buscado quando a janela alcança o futuro: olhar um ano
+        // fechado para trás não precisa de nada disso.
+        var forecast = end >= current
+            ? await contracts.GetInstallmentForecastAsync(ownerId, start, end, today, ct)
+            : [];
+
+        var overdue = end >= current
+            ? await contracts.GetOverdueTotalsAsync(ownerId, today, ct)
+            : new OverdueTotals(0m, 0m);
+
+        var recurring = end >= current
+            ? await recurringItems.ListAsync(ownerId, new RecurringFilter(OnlyActive: true), ct)
+            : [];
+
+        var generated = recurring.Count > 0
+            ? await queries.GetGeneratedRecurringMonthsAsync(ownerId, start, end, ct)
+            : new HashSet<(Guid, DateOnly)>();
+
+        return Result.Success(Compose(
+            start, end, current, opening, buckets, forecast, overdue, recurring, generated));
     }
 
     /// <summary>
-    /// Resolve o intervalo pedido. Em branco, os doze meses que terminam no mês
-    /// corrente — o recorte com que quem opera o caixa olha para ele.
+    /// Resolve o intervalo pedido. Em branco, a janela é centrada no mês
+    /// corrente: seis meses para trás e seis para a frente.
     /// </summary>
+    private DateOnly Today => DateOnly.FromDateTime(clock.UtcNow.UtcDateTime);
+
     internal Result<(YearMonth From, YearMonth To)> ResolveRange(string? from, string? to)
     {
         var current = YearMonth.From(DateOnly.FromDateTime(clock.UtcNow.UtcDateTime));
@@ -65,7 +104,9 @@ public sealed class MonthlyCashService(
         // devolver um intervalo vazio ou o ano inteiro.
         (start, end) = (start, end) switch
         {
-            (null, null) => (current.AddMonths(-(DefaultMonths - 1)), current),
+            (null, null) => (
+                current.AddMonths(-(DefaultMonths - DefaultMonthsAhead - 1)),
+                current.AddMonths(DefaultMonthsAhead)),
             ({ } s, null) => (s, s.AddMonths(DefaultMonths - 1)),
             (null, { } e) => (e.AddMonths(-(DefaultMonths - 1)), e),
             ({ } s, { } e) => (s, e),
@@ -111,15 +152,25 @@ public sealed class MonthlyCashService(
     internal static MonthlyCashResponse Compose(
         YearMonth start,
         YearMonth end,
+        YearMonth current,
         decimal opening,
-        IReadOnlyList<MonthlyBucket> buckets)
+        IReadOnlyList<MonthlyBucket> buckets,
+        IReadOnlyList<InstallmentForecastBucket> forecast,
+        OverdueTotals overdue,
+        IReadOnlyList<RecurringItem> recurring,
+        IReadOnlySet<(Guid RecurringItemId, DateOnly Month)> generated)
     {
         var byMonth = buckets
             .GroupBy(b => new YearMonth(b.Year, b.Month))
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var forecastByMonth = forecast
+            .GroupBy(f => new YearMonth(f.Year, f.Month))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var months = new List<MonthlyCashMonth>();
         var running = opening;
+        var projected = opening;
 
         foreach (var competence in YearMonth.Range(start, end))
         {
@@ -132,6 +183,16 @@ public sealed class MonthlyCashService(
             var monthOpening = running;
             running += income - expense;
 
+            // Mês passado não tem previsto: o que aconteceu, aconteceu. Só do
+            // mês corrente em diante faz sentido esperar mais alguma coisa.
+            var isFuture = competence >= current;
+
+            var (expectedIncome, expectedExpense) = isFuture
+                ? Expected(competence, forecastByMonth, recurring, generated)
+                : (0m, 0m);
+
+            projected += income - expense + expectedIncome - expectedExpense;
+
             months.Add(new MonthlyCashMonth(
                 competence.ToString(),
                 competence.Year,
@@ -142,6 +203,11 @@ public sealed class MonthlyCashService(
                 expense,
                 income - expense,
                 running,
+                IsForecast: competence > current,
+                ExpectedIncome: expectedIncome,
+                ExpectedExpense: expectedExpense,
+                ProjectedResult: income - expense + expectedIncome - expectedExpense,
+                ProjectedBalance: projected,
                 FixedExpense: rows
                     .Where(b => b.RecurringKind == RecurringKind.FixedExpense)
                     .Sum(b => b.Amount),
@@ -176,15 +242,53 @@ public sealed class MonthlyCashService(
             totalExpense,
             totalIncome - totalExpense,
             running,
-            AverageMonthlyResult: months.Count == 0
-                ? 0m
-                : decimal.Round((totalIncome - totalExpense) / months.Count, 2, MidpointRounding.AwayFromZero),
+            AverageMonthlyResult: Average(months, totalIncome - totalExpense),
             TotalFixedExpense: months.Sum(m => m.FixedExpense),
             TotalProLabore: months.Sum(m => m.ProLabore),
+            ProjectedBalance: projected,
+            TotalExpectedIncome: months.Sum(m => m.ExpectedIncome),
+            TotalExpectedExpense: months.Sum(m => m.ExpectedExpense),
+            OverdueReceivable: overdue.Receivable,
+            OverduePayable: overdue.Payable,
             BestMonthIndex: IndexOfExtreme(months, best: true),
             WorstMonthIndex: IndexOfExtreme(months, best: false),
             Months: months);
     }
+
+    /// <summary>
+    /// O previsto de um mês: as parcelas em aberto que vencem nele mais os itens
+    /// fixos vigentes que ainda não viraram lançamento. Descontar os já gerados
+    /// é o que impede contar o aluguel duas vezes no mês em que ele já foi lançado.
+    /// </summary>
+    private static (decimal Income, decimal Expense) Expected(
+        YearMonth competence,
+        Dictionary<YearMonth, List<InstallmentForecastBucket>> forecastByMonth,
+        IReadOnlyList<RecurringItem> recurring,
+        IReadOnlySet<(Guid RecurringItemId, DateOnly Month)> generated)
+    {
+        var installments = forecastByMonth.TryGetValue(competence, out var found) ? found : [];
+
+        var income = installments
+            .Where(f => f.Direction == ContractDirection.Receivable)
+            .Sum(f => f.Amount);
+
+        var expense = installments
+            .Where(f => f.Direction == ContractDirection.Payable)
+            .Sum(f => f.Amount);
+
+        var pending = recurring
+            .Where(item => item.IsDueIn(competence))
+            .Where(item => !generated.Contains((item.Id, competence.FirstDay)))
+            .ToList();
+
+        income += pending.Where(i => i.EntryType == EntryType.Income).Sum(i => i.Amount);
+        expense += pending.Where(i => i.EntryType == EntryType.Expense).Sum(i => i.Amount);
+
+        return (income, expense);
+    }
+
+    private static decimal Average(List<MonthlyCashMonth> months, decimal result) =>
+        months.Count == 0 ? 0m : decimal.Round(result / months.Count, 2, MidpointRounding.AwayFromZero);
 
     private static decimal Sum(List<MonthlyBucket> rows, EntryType type) =>
         rows.Where(b => b.Type == type).Sum(b => b.Amount);

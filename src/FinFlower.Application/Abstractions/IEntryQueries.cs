@@ -35,6 +35,16 @@ public interface IEntryQueries
         YearMonth competence,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// As competências de itens fixos já lançadas no intervalo. É o que permite
+    /// prever só o que falta gerar, sem contar duas vezes o mês já lançado.
+    /// </summary>
+    Task<IReadOnlySet<(Guid RecurringItemId, DateOnly Month)>> GetGeneratedRecurringMonthsAsync(
+        Guid ownerId,
+        YearMonth from,
+        YearMonth to,
+        CancellationToken cancellationToken = default);
+
     /// <summary>As categorias já usadas pelo dono, para o formulário sugerir.</summary>
     Task<IReadOnlyList<string>> ListCategoriesAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }

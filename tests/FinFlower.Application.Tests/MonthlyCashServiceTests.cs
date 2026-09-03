@@ -156,17 +156,20 @@ public class MonthlyCashServiceTests
     }
 
     [Fact]
-    public async Task Default_window_is_the_twelve_months_ending_now()
+    public async Task Default_window_is_centred_on_the_current_month()
     {
         using var ctx = new EventTestContext();
         ctx.ActAs();
 
-        // O relógio de teste marca 01/09/2026.
+        // O relógio de teste marca 01/09/2026. A janela é centrada porque um
+        // caixa serve tanto para ver de onde se veio quanto para saber se dá
+        // para pagar as contas do trimestre.
         var cash = (await ctx.MonthlyCash.GetAsync(null, null)).Value;
 
-        cash.From.Should().Be("2025-10");
-        cash.To.Should().Be("2026-09");
+        cash.From.Should().Be("2026-04");
+        cash.To.Should().Be("2027-03");
         cash.Months.Should().HaveCount(12);
+        cash.Months.Count(m => m.IsForecast).Should().Be(6);
     }
 
     [Fact]
@@ -239,5 +242,114 @@ public class MonthlyCashServiceTests
         ctx.CurrentUser.UserId = null;
 
         (await ctx.MonthlyCash.GetAsync(null, null)).Error!.Type.Should().Be(ErrorType.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Future_months_project_the_open_installments()
+    {
+        using var ctx = new EventTestContext();
+        ctx.ActAs();
+
+        await ctx.Contracts.CreateAsync(new Contracts.Dtos.CreateContractRequest(
+            ContractDirection.Receivable, "Prefeitura", null, 30_000m,
+            PaymentMethod.Boleto, 3, new DateOnly(2026, 10, 5), new DateOnly(2026, 9, 1)));
+
+        var cash = (await ctx.MonthlyCash.GetAsync("2026-09", "2026-12")).Value;
+
+        // Nada foi liquidado: o realizado segue zerado e o previsto carrega tudo.
+        cash.Result.Should().Be(0m);
+        cash.ClosingBalance.Should().Be(0m);
+
+        var october = cash.Months.Single(m => m.Competence == "2026-10");
+        october.Income.Should().Be(0m);
+        october.ExpectedIncome.Should().Be(10_000m);
+        october.ProjectedBalance.Should().Be(10_000m);
+
+        cash.Months.Single(m => m.Competence == "2026-12").ProjectedBalance.Should().Be(30_000m);
+        cash.ProjectedBalance.Should().Be(30_000m);
+        cash.TotalExpectedIncome.Should().Be(30_000m);
+    }
+
+    [Fact]
+    public async Task The_forecast_also_carries_the_fixed_costs_that_come_with_it()
+    {
+        using var ctx = new EventTestContext();
+        ctx.ActAs();
+
+        await ctx.Contracts.CreateAsync(new Contracts.Dtos.CreateContractRequest(
+            ContractDirection.Receivable, "Cliente", null, 10_000m,
+            PaymentMethod.Pix, 1, new DateOnly(2026, 11, 10), new DateOnly(2026, 9, 1)));
+
+        await ctx.RecurringItems.CreateAsync(new CreateRecurringItemRequest(
+            RecurringKind.FixedExpense, "Aluguel", 2_500m, "Estrutura", 10, "2026-01", null, null));
+        await ctx.RecurringItems.CreateAsync(new CreateRecurringItemRequest(
+            RecurringKind.ProLabore, "Retirada", 6_000m, "Sócios", 5, "2026-01", null, null));
+
+        var november = (await ctx.MonthlyCash.GetAsync("2026-11", "2026-11")).Value.Months.Single();
+
+        // Contar só a parcela mostraria dinheiro entrando sem o custo que vem
+        // junto — a projeção ficaria otimista todo mês.
+        november.ExpectedIncome.Should().Be(10_000m);
+        november.ExpectedExpense.Should().Be(8_500m);
+        november.ProjectedResult.Should().Be(1_500m);
+    }
+
+    [Fact]
+    public async Task A_fixed_item_already_launched_is_not_forecast_again()
+    {
+        using var ctx = new EventTestContext();
+        ctx.ActAs();
+
+        await ctx.RecurringItems.CreateAsync(new CreateRecurringItemRequest(
+            RecurringKind.FixedExpense, "Aluguel", 2_500m, "Estrutura", 10, "2026-01", null, null));
+
+        await ctx.RecurringItems.GenerateMonthAsync("2026-09", null);
+
+        var september = (await ctx.MonthlyCash.GetAsync("2026-09", "2026-10")).Value.Months;
+
+        september[0].Expense.Should().Be(2_500m, "setembro virou realizado");
+        september[0].ExpectedExpense.Should().Be(0m, "e não pode ser previsto de novo");
+        september[1].ExpectedExpense.Should().Be(2_500m, "outubro ainda não foi lançado");
+    }
+
+    [Fact]
+    public async Task Past_months_carry_no_forecast()
+    {
+        using var ctx = new EventTestContext();
+        ctx.ActAs();
+
+        await ctx.RecurringItems.CreateAsync(new CreateRecurringItemRequest(
+            RecurringKind.FixedExpense, "Aluguel", 2_500m, "Estrutura", 10, "2026-01", null, null));
+
+        var cash = (await ctx.MonthlyCash.GetAsync("2026-05", "2026-08")).Value;
+
+        // O que aconteceu, aconteceu: prever o passado inventaria despesa.
+        cash.Months.Should().AllSatisfy(m =>
+        {
+            m.IsForecast.Should().BeFalse();
+            m.ExpectedExpense.Should().Be(0m);
+        });
+
+        cash.ProjectedBalance.Should().Be(cash.ClosingBalance);
+    }
+
+    [Fact]
+    public async Task Overdue_is_reported_apart_from_the_months()
+    {
+        using var ctx = new EventTestContext();
+        ctx.ActAs();
+
+        // Venceu em julho e não foi liquidada; o relógio marca setembro.
+        await ctx.Contracts.CreateAsync(new Contracts.Dtos.CreateContractRequest(
+            ContractDirection.Receivable, "Cliente atrasado", null, 4_000m,
+            PaymentMethod.Boleto, 1, new DateOnly(2026, 7, 10), new DateOnly(2026, 6, 1)));
+
+        var cash = (await ctx.MonthlyCash.GetAsync("2026-07", "2026-10")).Value;
+
+        // Dívida vencida não é previsão de mês nenhum: entra à parte, senão
+        // inflaria um mês que já fechou ou um mês futuro que não a espera.
+        cash.OverdueReceivable.Should().Be(4_000m);
+        cash.Months.Should().AllSatisfy(m => m.ExpectedIncome.Should().Be(0m));
+        cash.ProjectedBalance.Should().Be(0m);
     }
 }

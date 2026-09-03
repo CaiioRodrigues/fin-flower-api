@@ -23,6 +23,23 @@ public interface IContractQueries
         DateOnly today,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// O previsto que vem dos contratos: parcelas em aberto que vencem dentro do
+    /// intervalo, agrupadas por mês e sentido. O vencido sai por
+    /// <see cref="GetOverdueTotalsAsync"/>, porque não pertence a mês futuro nenhum.
+    /// </summary>
+    Task<IReadOnlyList<Cash.Dtos.InstallmentForecastBucket>> GetInstallmentForecastAsync(
+        Guid ownerId,
+        Domain.ValueObjects.YearMonth from,
+        Domain.ValueObjects.YearMonth to,
+        DateOnly today,
+        CancellationToken cancellationToken = default);
+
+    Task<Cash.Dtos.OverdueTotals> GetOverdueTotalsAsync(
+        Guid ownerId,
+        DateOnly today,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Parcelas em aberto agrupadas por mês de vencimento, mais as vencidas.</summary>
     Task<CashFlowReportResponse> GetCashFlowAsync(
         Guid ownerId,
