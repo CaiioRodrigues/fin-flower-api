@@ -273,6 +273,7 @@ public class CashLedgerEndpointsTests(ApiFactory factory) : IClassFixture<ApiFac
         using var workbook = new XLWorkbook(stream);
         var sheet = workbook.Worksheet("Mês a mês");
 
+        // Coluna 6 é "Saldo final" — ver a ordem em BuildMonthlyCash.
         sheet.Cell(2, 1).GetString().Should().Be("jul/2026");
         sheet.Cell(2, 6).DataType.Should().Be(XLDataType.Number, "saldo tem de ser número para somar");
         sheet.Cell(2, 6).GetValue<decimal>().Should().Be(10_000m);

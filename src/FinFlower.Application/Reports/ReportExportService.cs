@@ -238,14 +238,18 @@ public sealed class ReportExportService(
         rows.Add(Row(true, "Total", null, report.TotalIncome, report.TotalExpense, report.Balance));
 
         return new ReportDocument(
-            "caixa-por-evento",
-            "Caixa por evento",
+            "resultado-por-evento",
+            "Resultado por evento",
             period,
             clock.UtcNow,
             [
                 new ReportMetric("Entradas", Money(report.TotalIncome)),
                 new ReportMetric("Saídas", Money(report.TotalExpense)),
-                new ReportMetric("Saldo", Money(report.Balance)),
+
+                // Não é "saldo": este relatório soma só o que está preso a um
+                // evento, e a maior parte do custo do mês — aluguel, contador,
+                // pró-labore — não está. O saldo de verdade é o do caixa mensal.
+                new ReportMetric("Resultado dos eventos", Money(report.Balance)),
                 new ReportMetric("Eventos", report.EventCount.ToString(Ptbr)),
                 new ReportMetric("Com lucro", report.ProfitableEventCount.ToString(Ptbr)),
                 new ReportMetric("Com prejuízo", report.UnprofitableEventCount.ToString(Ptbr)),
@@ -272,12 +276,15 @@ public sealed class ReportExportService(
     {
         var months = report.Months
             .Select(m => Row(false,
-                m.Label,
+                m.IsForecast ? $"{m.Label} (previsto)" : m.Label,
                 m.OpeningBalance,
                 m.Income,
                 m.Expense,
                 m.Result,
                 m.ClosingBalance,
+                m.ExpectedIncome,
+                m.ExpectedExpense,
+                m.ProjectedBalance,
                 m.FixedExpense,
                 m.ProLabore,
                 m.EntryCount))
@@ -290,6 +297,9 @@ public sealed class ReportExportService(
             report.TotalExpense,
             report.Result,
             report.ClosingBalance,
+            report.TotalExpectedIncome,
+            report.TotalExpectedExpense,
+            report.ProjectedBalance,
             report.TotalFixedExpense,
             report.TotalProLabore,
             report.Months.Sum(m => m.EntryCount)));
@@ -321,7 +331,10 @@ public sealed class ReportExportService(
                 new ReportMetric("Saídas", Money(report.TotalExpense)),
                 new ReportMetric("Resultado", Money(report.Result)),
                 new ReportMetric("Saldo final", Money(report.ClosingBalance)),
+                new ReportMetric("Saldo projetado", Money(report.ProjectedBalance)),
                 new ReportMetric("Média mensal", Money(report.AverageMonthlyResult)),
+                new ReportMetric("Vencido a receber", Money(report.OverdueReceivable)),
+                new ReportMetric("Vencido a pagar", Money(report.OverduePayable)),
                 new ReportMetric("Custos fixos", Money(report.TotalFixedExpense)),
                 new ReportMetric("Pró-labore", Money(report.TotalProLabore)),
             ],
@@ -334,9 +347,15 @@ public sealed class ReportExportService(
                         new ReportColumn("Saídas", ReportColumnType.Money),
                         new ReportColumn("Resultado", ReportColumnType.Money),
                         new ReportColumn("Saldo final", ReportColumnType.Money),
+                        new ReportColumn("A receber", ReportColumnType.Money),
+                        new ReportColumn("A pagar", ReportColumnType.Money),
+                        new ReportColumn("Saldo projetado", ReportColumnType.Money),
                         new ReportColumn("Custos fixos", ReportColumnType.Money),
                         new ReportColumn("Pró-labore", ReportColumnType.Money),
-                        new ReportColumn("Lançamentos", ReportColumnType.Count),
+
+                        // Abreviado porque a tabela é larga: "Lançamentos" não
+                        // cabe na coluna de contagem e quebrava no meio.
+                        new ReportColumn("Lanç.", ReportColumnType.Count),
                     ],
                     months),
                 new ReportTable("Saídas por categoria",

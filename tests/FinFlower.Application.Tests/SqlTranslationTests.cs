@@ -75,6 +75,7 @@ public class SqlTranslationTests
             // item fixo, para separar pró-labore de gasto fixo dentro do mês.
             () => queries.GetMonthlyBucketsAsync(ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12)),
             () => queries.GetBalanceBeforeAsync(ownerId, new YearMonth(2026, 1)),
+            () => queries.GetGeneratedRecurringMonthsAsync(ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12)),
             () => queries.ListCategoriesAsync(ownerId),
         };
 
@@ -101,6 +102,12 @@ public class SqlTranslationTests
             () => contracts.ListAsync(ownerId, new ContractFilter(), today),
             () => contracts.GetAsync(Guid.CreateVersion7(), ownerId, today),
             () => contracts.GetCashFlowAsync(ownerId, today, 6),
+
+            // O previsto do caixa: agrupamento de parcelas em aberto por mês de
+            // vencimento, com o sentido vindo de uma subconsulta no contrato.
+            () => contracts.GetInstallmentForecastAsync(
+                ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12), today),
+            () => contracts.GetOverdueTotalsAsync(ownerId, today),
         };
 
         await AssertTranslatesAsync(calls);

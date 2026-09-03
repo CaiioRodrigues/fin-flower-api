@@ -84,7 +84,7 @@ public class ReportExportTests(ApiFactory factory) : IClassFixture<ApiFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType
             .Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.Content.Headers.ContentDisposition!.FileName.Should().Contain("caixa-por-evento");
+        response.Content.Headers.ContentDisposition!.FileName.Should().Contain("resultado-por-evento");
 
         using var workbook = OpenWorkbook(await response.Content.ReadAsByteArrayAsync());
         var sheet = workbook.Worksheet("Eventos");

@@ -61,8 +61,8 @@ public class SampleDump(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var rotas = new (string Route, string Name)[]
         {
-            ("/api/reports/cash/export?format=xlsx", "caixa-por-evento.xlsx"),
-            ("/api/reports/cash/export?format=pdf", "caixa-por-evento.pdf"),
+            ("/api/reports/cash/export?format=xlsx", "resultado-por-evento.xlsx"),
+            ("/api/reports/cash/export?format=pdf", "resultado-por-evento.pdf"),
             ("/api/reports/cash-flow/export?format=xlsx", "fluxo-de-caixa.xlsx"),
             ("/api/reports/cash-flow/export?format=pdf", "fluxo-de-caixa.pdf"),
             ("/api/reports/installments/export?format=xlsx", "parcelas.xlsx"),

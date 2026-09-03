@@ -14,12 +14,23 @@ namespace FinFlower.Infrastructure.Reports;
 public sealed class PdfReportWriter : IReportWriter
 {
     private const int LandscapeColumnThreshold = 6;
+    private const float PageMargin = 28f;
 
     // Larguras fixas para o que tem tamanho previsível. Coluna proporcional
     // deixava "R$ 2.666,67" quebrar em duas linhas quando havia muito texto ao lado.
     private const float MoneyColumnWidth = 78f;
     private const float DateColumnWidth = 62f;
     private const float CountColumnWidth = 48f;
+
+    /// <summary>Espaço mínimo reservado às colunas de texto, que dividem o resto.</summary>
+    private const float MinimumTextWidth = 90f;
+
+    /// <summary>
+    /// Piso do encolhimento. Abaixo disto o número fica ilegível, e é melhor
+    /// deixar a tabela transbordar de forma visível do que entregar um PDF que
+    /// ninguém consegue ler.
+    /// </summary>
+    private const float MinimumScale = 0.62f;
     private static readonly CultureInfo Ptbr = CultureInfo.GetCultureInfo("pt-BR");
     private static readonly Color Accent = Color.FromHex("#12813C");
     private static readonly Color HeaderFill = Color.FromHex("#EEF4F0");
@@ -31,16 +42,24 @@ public sealed class PdfReportWriter : IReportWriter
     {
         var landscape = document.Tables.Any(t => t.Columns.Count >= LandscapeColumnThreshold);
 
+        // A largura útil da página decide se as colunas fixas cabem. Sem isto,
+        // um relatório com muitas colunas de dinheiro não ficava apertado: o
+        // QuestPDF lançava, e o download virava um 500.
+        var usableWidth = (landscape ? PageSizes.A4.Height : PageSizes.A4.Width) - (PageMargin * 2);
+        var scale = document.Tables.Count == 0
+            ? 1f
+            : document.Tables.Min(table => FitScale(table, usableWidth));
+
         var bytes = Document.Create(container =>
         {
             container.Page(page =>
             {
                 page.Size(landscape ? PageSizes.A4.Landscape() : PageSizes.A4);
-                page.Margin(28);
+                page.Margin(PageMargin);
                 page.DefaultTextStyle(style => style.FontSize(9).FontFamily(Fonts.Calibri));
 
                 page.Header().Element(header => Header(header, document));
-                page.Content().PaddingVertical(10).Element(content => Content(content, document));
+                page.Content().PaddingVertical(10).Element(content => Content(content, document, scale));
 
                 page.Footer().AlignRight().Text(text =>
                 {
@@ -71,7 +90,30 @@ public sealed class PdfReportWriter : IReportWriter
             column.Item().PaddingTop(6).LineHorizontal(1).LineColor(Accent);
         });
 
-    private static void Content(IContainer container, ReportDocument document) =>
+    /// <summary>
+    /// Quanto as colunas fixas precisam encolher para a tabela caber. 1 quando
+    /// já cabe; nunca abaixo de <see cref="MinimumScale"/>.
+    /// </summary>
+    private static float FitScale(ReportTable table, float usableWidth)
+    {
+        var fixedWidth = table.Columns.Sum(column => FixedWidthOf(column.Type));
+        var textColumns = table.Columns.Count(column => FixedWidthOf(column.Type) == 0);
+        var available = usableWidth - (textColumns * MinimumTextWidth);
+
+        if (fixedWidth <= available || fixedWidth <= 0) return 1f;
+
+        return Math.Max(MinimumScale, available / fixedWidth);
+    }
+
+    private static float FixedWidthOf(ReportColumnType type) => type switch
+    {
+        ReportColumnType.Money => MoneyColumnWidth,
+        ReportColumnType.Date => DateColumnWidth,
+        ReportColumnType.Count => CountColumnWidth,
+        _ => 0f,
+    };
+
+    private static void Content(IContainer container, ReportDocument document, float scale) =>
         container.Column(column =>
         {
             column.Spacing(16);
@@ -80,7 +122,7 @@ public sealed class PdfReportWriter : IReportWriter
                 column.Item().Element(metrics => Metrics(metrics, document.Metrics));
 
             foreach (var table in document.Tables.Where(t => t.Rows.Count > 0))
-                column.Item().Element(item => Table(item, table));
+                column.Item().Element(item => Table(item, table, scale));
         });
 
     private static void Metrics(IContainer container, IReadOnlyList<ReportMetric> metrics) =>
@@ -98,7 +140,7 @@ public sealed class PdfReportWriter : IReportWriter
             }
         });
 
-    private static void Table(IContainer container, ReportTable table) =>
+    private static void Table(IContainer container, ReportTable table, float scale) =>
         container.Column(column =>
         {
             column.Item().PaddingBottom(4).Text(table.Title).FontSize(12).SemiBold();
@@ -109,14 +151,11 @@ public sealed class PdfReportWriter : IReportWriter
                 {
                     foreach (var definition in table.Columns)
                     {
-                        switch (definition.Type)
-                        {
-                            case ReportColumnType.Money: columns.ConstantColumn(MoneyColumnWidth); break;
-                            case ReportColumnType.Date: columns.ConstantColumn(DateColumnWidth); break;
-                            case ReportColumnType.Count: columns.ConstantColumn(CountColumnWidth); break;
-                            // Só o texto disputa o espaço que sobra.
-                            default: columns.RelativeColumn(); break;
-                        }
+                        var width = FixedWidthOf(definition.Type);
+
+                        // Só o texto disputa o espaço que sobra.
+                        if (width == 0) columns.RelativeColumn();
+                        else columns.ConstantColumn(width * scale);
                     }
                 });
 
@@ -130,7 +169,7 @@ public sealed class PdfReportWriter : IReportWriter
                             .Background(HeaderFill)
                             .Padding(4)
                             .AlignedFor(definition.Type)
-                            .Text(definition.Header).SemiBold().FontSize(8);
+                            .Text(definition.Header).SemiBold().FontSize(8 * scale);
                     }
                 });
 
@@ -146,6 +185,11 @@ public sealed class PdfReportWriter : IReportWriter
                             .Padding(4)
                             .AlignedFor(table.Columns[index].Type)
                             .Text(Cell(value));
+
+                        // Apertar a coluna sem apertar a fonte devolveria o
+                        // defeito que as larguras fixas resolveram: número
+                        // quebrado no meio.
+                        cell.FontSize(9 * scale);
 
                         if (row.Emphasized) cell.SemiBold();
                     }

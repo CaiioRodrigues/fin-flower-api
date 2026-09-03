@@ -6,9 +6,13 @@ namespace FinFlower.Application.Cash.Dtos;
 public sealed record CategoryTotal(string Category, decimal Amount, int Count);
 
 /// <summary>
-/// O mês fechado: o que entrou, o que saiu, o que sobrou, e o saldo acumulado
-/// depois dele. <c>OpeningBalance</c> é o fechamento do mês anterior, então a
-/// sequência de meses lida de cima a baixo conta a história inteira do caixa.
+/// Um mês do caixa. <c>OpeningBalance</c> é o fechamento do mês anterior, então
+/// a sequência lida de cima a baixo conta a história inteira do dinheiro.
+///
+/// Os campos vêm em dois pares. <c>Income</c>/<c>Expense</c> são o realizado —
+/// dinheiro que se moveu. <c>Expected*</c> é o previsto do mês: parcelas em
+/// aberto que vencem nele mais itens fixos que ainda não viraram lançamento.
+/// Mês passado não tem previsto: o que aconteceu, aconteceu.
 /// </summary>
 public sealed record MonthlyCashMonth(
     string Competence,
@@ -20,6 +24,11 @@ public sealed record MonthlyCashMonth(
     decimal Expense,
     decimal Result,
     decimal ClosingBalance,
+    bool IsForecast,
+    decimal ExpectedIncome,
+    decimal ExpectedExpense,
+    decimal ProjectedResult,
+    decimal ProjectedBalance,
     decimal FixedExpense,
     decimal ProLabore,
     decimal EventIncome,
@@ -46,9 +55,33 @@ public sealed record MonthlyCashResponse(
     decimal AverageMonthlyResult,
     decimal TotalFixedExpense,
     decimal TotalProLabore,
+
+    // Saldo se tudo que está previsto acontecer. Não inclui o vencido, que é
+    // reportado à parte por não pertencer a mês nenhum do futuro.
+    decimal ProjectedBalance,
+    decimal TotalExpectedIncome,
+    decimal TotalExpectedExpense,
+    decimal OverdueReceivable,
+    decimal OverduePayable,
+
     int BestMonthIndex,
     int WorstMonthIndex,
     IReadOnlyList<MonthlyCashMonth> Months);
+
+/// <summary>
+/// Parcelas em aberto agrupadas por mês de vencimento e sentido. É o previsto
+/// que vem dos contratos; o que vem dos itens fixos é calculado a partir da
+/// vigência deles, sem passar pelo banco.
+/// </summary>
+public sealed record InstallmentForecastBucket(
+    int Year,
+    int Month,
+    Domain.Enums.ContractDirection Direction,
+    decimal Amount,
+    int Count);
+
+/// <summary>O que venceu e não foi liquidado, separado por sentido.</summary>
+public sealed record OverdueTotals(decimal Receivable, decimal Payable);
 
 /// <summary>
 /// Linha crua do agrupamento no banco: um total por mês, sentido, categoria e

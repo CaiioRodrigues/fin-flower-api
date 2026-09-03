@@ -126,6 +126,65 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
             row.Installments);
     }
 
+    public async Task<IReadOnlyList<Application.Cash.Dtos.InstallmentForecastBucket>> GetInstallmentForecastAsync(
+        Guid ownerId,
+        Domain.ValueObjects.YearMonth from,
+        Domain.ValueObjects.YearMonth to,
+        DateOnly today,
+        CancellationToken cancellationToken = default)
+    {
+        // O piso é hoje, não o início do intervalo: uma parcela que venceu em
+        // julho e não foi paga não é previsão de julho, é dívida de agora — ela
+        // sai por GetOverdueTotalsAsync.
+        var floor = today > from.FirstDay ? today : from.FirstDay;
+        var ceiling = to.LastDay;
+
+        return await OpenInstallmentsOf(ownerId)
+            .Where(i => i.DueDate >= floor && i.DueDate <= ceiling)
+            .GroupBy(i => new
+            {
+                i.DueDate.Year,
+                i.DueDate.Month,
+                Direction = context.Contracts
+                    .Where(c => c.Id == i.ContractId)
+                    .Select(c => c.Direction)
+                    .FirstOrDefault(),
+            })
+            .Select(g => new Application.Cash.Dtos.InstallmentForecastBucket(
+                g.Key.Year,
+                g.Key.Month,
+                g.Key.Direction,
+                g.Sum(i => i.Amount),
+                g.Count()))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Application.Cash.Dtos.OverdueTotals> GetOverdueTotalsAsync(
+        Guid ownerId,
+        DateOnly today,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await OpenInstallmentsOf(ownerId)
+            .Where(i => i.DueDate < today)
+            .GroupBy(i => context.Contracts
+                .Where(c => c.Id == i.ContractId)
+                .Select(c => c.Direction)
+                .FirstOrDefault())
+            .Select(g => new { Direction = g.Key, Amount = g.Sum(i => i.Amount) })
+            .ToListAsync(cancellationToken);
+
+        return new Application.Cash.Dtos.OverdueTotals(
+            rows.Where(r => r.Direction == ContractDirection.Receivable).Sum(r => r.Amount),
+            rows.Where(r => r.Direction == ContractDirection.Payable).Sum(r => r.Amount));
+    }
+
+    /// <summary>Parcelas pendentes de contratos vivos do dono.</summary>
+    private IQueryable<Domain.Entities.Installment> OpenInstallmentsOf(Guid ownerId) =>
+        context.Installments
+            .AsNoTracking()
+            .Where(i => i.Status == InstallmentStatus.Pending)
+            .Where(i => context.Contracts.Any(c => c.Id == i.ContractId && c.OwnerId == ownerId && !c.IsDeleted));
+
     public async Task<CashFlowReportResponse> GetCashFlowAsync(
         Guid ownerId,
         DateOnly today,

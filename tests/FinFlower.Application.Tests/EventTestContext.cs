@@ -51,18 +51,24 @@ public sealed class EventTestContext : IDisposable
             Clock,
             Context);
 
-        MonthlyCash = new MonthlyCashService(entryQueries, CurrentUser, Clock);
+        var contractQueries = new ContractQueries(Context);
+        var recurringRepository = new RecurringItemRepository(Context);
+
+        MonthlyCash = new MonthlyCashService(
+            entryQueries,
+            contractQueries,
+            recurringRepository,
+            CurrentUser,
+            Clock);
 
         RecurringItems = new RecurringItemService(
-            new RecurringItemRepository(Context),
+            recurringRepository,
             entryRepository,
             CurrentUser,
             Clock,
             Context);
 
         CashReport = new CashReportService(queries, CurrentUser);
-
-        var contractQueries = new ContractQueries(Context);
 
         Contracts = new ContractService(
             new ContractRepository(Context),
