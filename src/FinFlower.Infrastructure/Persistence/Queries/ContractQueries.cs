@@ -31,7 +31,7 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
             {
                 c.Id,
                 c.EventId,
-                EventName = context.Events.Where(e => e.Id == c.EventId).Select(e => e.Name).First(),
+                EventName = context.Events.Where(e => e.Id == c.EventId).Select(e => e.Name).FirstOrDefault(),
                 c.Direction,
                 c.Counterparty,
                 c.TotalAmount,
@@ -97,6 +97,8 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
                     .Where(a => a.ContractId == c.Id)
                     .Select(a => new AttachmentResponse(a.FileName, a.SizeInBytes, a.UploadedAt))
                     .FirstOrDefault(),
+                EventName = context.Events.Where(e => e.Id == c.EventId).Select(e => e.Name).FirstOrDefault(),
+                QuoteNumber = context.Quotes.Where(q => q.Id == c.QuoteId).Select(q => q.Number).FirstOrDefault(),
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -107,6 +109,9 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
         return new ContractResponse(
             contract.Id,
             contract.EventId,
+            row.EventName,
+            contract.QuoteId,
+            row.QuoteNumber,
             contract.Direction,
             contract.Counterparty,
             contract.Description,
@@ -127,10 +132,10 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
         int monthsAhead,
         CancellationToken cancellationToken = default)
     {
-        // Realizado: o mesmo saldo que a tela de eventos mostra.
+        // Realizado: o saldo do livro-caixa inteiro, com evento ou sem.
         var realized = await context.Entries
             .AsNoTracking()
-            .Where(e => context.Events.Any(ev => ev.Id == e.EventId && ev.OwnerId == ownerId && !ev.IsDeleted))
+            .Where(e => e.OwnerId == ownerId)
             .SumAsync(e => (decimal?)(e.Type == EntryType.Income ? e.Amount : -e.Amount), cancellationToken) ?? 0m;
 
         var open = await context.Installments
@@ -139,11 +144,11 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
             .Where(i => context.Contracts.Any(c => c.Id == i.ContractId && c.OwnerId == ownerId && !c.IsDeleted))
             .Select(i => new OpenInstallment(
                 i.ContractId,
-                context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.EventId).First(),
+                context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.EventId).FirstOrDefault(),
                 context.Contracts
                     .Where(c => c.Id == i.ContractId)
-                    .Select(c => context.Events.Where(e => e.Id == c.EventId).Select(e => e.Name).First())
-                    .First(),
+                    .Select(c => context.Events.Where(e => e.Id == c.EventId).Select(e => e.Name).FirstOrDefault())
+                    .FirstOrDefault(),
                 context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.Counterparty).First(),
                 context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.Direction).First(),
                 context.Contracts.Where(c => c.Id == i.ContractId).Select(c => c.PaymentMethod).First(),
@@ -196,8 +201,8 @@ public sealed class ContractQueries(AppDbContext context) : IContractQueries
     /// <summary>Parcela em aberto com o contexto do contrato, achatada para agrupar.</summary>
     private sealed record OpenInstallment(
         Guid ContractId,
-        Guid EventId,
-        string EventName,
+        Guid? EventId,
+        string? EventName,
         string Counterparty,
         ContractDirection Direction,
         PaymentMethod PaymentMethod,

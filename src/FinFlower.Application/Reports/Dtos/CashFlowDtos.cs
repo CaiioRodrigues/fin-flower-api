@@ -5,8 +5,8 @@ namespace FinFlower.Application.Reports.Dtos;
 /// <summary>Uma parcela em aberto, na visão do fluxo de caixa.</summary>
 public sealed record ScheduledInstallmentResponse(
     Guid ContractId,
-    Guid EventId,
-    string EventName,
+    Guid? EventId,
+    string? EventName,
     string Counterparty,
     ContractDirection Direction,
     PaymentMethod PaymentMethod,

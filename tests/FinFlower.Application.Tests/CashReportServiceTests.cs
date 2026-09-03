@@ -1,4 +1,5 @@
 using FinFlower.Application.Common;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Domain.Enums;
 using FluentAssertions;
@@ -18,10 +19,10 @@ public class CashReportServiceTests
         var @event = (await ctx.Events.CreateAsync(new CreateEventRequest(name, null, date))).Value;
 
         if (income > 0)
-            await ctx.Events.AddEntryAsync(@event.Id, new CreateEntryRequest(EntryType.Income, "Ingressos", income, "Vendas", date));
+            await ctx.Entries.CreateAsync(new CreateEntryRequest(EntryType.Income, "Ingressos", income, "Vendas", date, @event.Id));
 
         if (expense > 0)
-            await ctx.Events.AddEntryAsync(@event.Id, new CreateEntryRequest(EntryType.Expense, "Custos", expense, "Estrutura", date));
+            await ctx.Entries.CreateAsync(new CreateEntryRequest(EntryType.Expense, "Custos", expense, "Estrutura", date, @event.Id));
     }
 
     /// <summary>O cenário do enunciado: cinco eventos, três com lucro e dois com prejuízo.</summary>
@@ -135,7 +136,17 @@ public class CashReportServiceTests
         await ArrangeFiveEventsAsync(ctx);
         var show = (await ctx.Events.ListAsync(new EventFilter())).Value.Single(e => e.Name == "Show de rock");
 
-        await ctx.Events.DeleteAsync(show.Id);
+        // O evento com lançamentos recusa a exclusão: o dinheiro é do caixa, e
+        // decidir o destino dele é de quem opera.
+        (await ctx.Events.DeleteAsync(show.Id)).Error!.Code.Should().Be("event.has_entries");
+
+        var entries = (await ctx.Entries.ListAsync(
+            new Entries.Dtos.EntryFilter(EventId: show.Id), 1, 50)).Value.Entries;
+
+        foreach (var entry in entries)
+            await ctx.Entries.DeleteAsync(entry.Id);
+
+        (await ctx.Events.DeleteAsync(show.Id)).IsSuccess.Should().BeTrue();
         var report = (await ctx.CashReport.GetAsync(null, null)).Value;
 
         report.EventCount.Should().Be(4);

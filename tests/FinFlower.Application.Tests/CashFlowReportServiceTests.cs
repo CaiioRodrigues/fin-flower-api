@@ -1,5 +1,6 @@
 using FinFlower.Application.Common;
 using FinFlower.Application.Contracts.Dtos;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Domain.Enums;
 using FluentAssertions;
@@ -21,9 +22,9 @@ public class CashFlowReportServiceTests
         decimal total,
         int parts,
         DateOnly firstDue) =>
-        ctx.Contracts.CreateAsync(eventId, new CreateContractRequest(
+        ctx.Contracts.CreateAsync(new CreateContractRequest(
             direction, direction == ContractDirection.Receivable ? "Cliente" : "Fornecedor",
-            null, total, PaymentMethod.Boleto, parts, firstDue, Today));
+            null, total, PaymentMethod.Boleto, parts, firstDue, Today, eventId));
 
     [Fact]
     public async Task Separates_what_is_overdue_from_the_current_month_and_the_next_ones()
@@ -82,8 +83,8 @@ public class CashFlowReportServiceTests
         var eventId = await NewEventAsync(ctx);
 
         // Realizado: uma despesa lançada à mão.
-        await ctx.Events.AddEntryAsync(eventId, new CreateEntryRequest(
-            EntryType.Expense, "Sinal do espaço", 2000m, "Estrutura", Today));
+        await ctx.Entries.CreateAsync(new CreateEntryRequest(
+            EntryType.Expense, "Sinal do espaço", 2000m, "Estrutura", Today, eventId));
 
         await NewContractAsync(ctx, eventId, ContractDirection.Receivable, 10_000m, 1, new DateOnly(2026, 10, 5));
         await NewContractAsync(ctx, eventId, ContractDirection.Payable, 3000m, 1, new DateOnly(2026, 11, 5));

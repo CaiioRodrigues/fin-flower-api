@@ -12,7 +12,6 @@ public class ContractTests
 
     private static Contract NewContract(decimal total = 9000m, int installments = 3) => new(
         Guid.CreateVersion7(),
-        Guid.CreateVersion7(),
         ContractDirection.Receivable,
         "Prefeitura Municipal",
         "Show de encerramento",
@@ -62,7 +61,7 @@ public class ContractTests
     public void End_of_month_due_dates_do_not_overflow()
     {
         var contract = new Contract(
-            Guid.CreateVersion7(), Guid.CreateVersion7(), ContractDirection.Receivable,
+            Guid.CreateVersion7(), ContractDirection.Receivable,
             "Cliente", null, 300m, PaymentMethod.Pix, 3,
             firstDueDate: new DateOnly(2026, 1, 31), signedOn: Signed);
 
@@ -94,14 +93,18 @@ public class ContractTests
     public void Settling_records_the_amount_the_date_and_the_entry()
     {
         var contract = NewContract();
-        var entryId = Guid.CreateVersion7();
 
-        contract.SettleInstallment(1, new DateOnly(2026, 10, 3), 2900m, entryId);
+        var entry = contract.SettleInstallment(1, new DateOnly(2026, 10, 3), 2900m, null, "Contratos");
 
         var installment = contract.FindInstallment(1);
         installment.Status.Should().Be(InstallmentStatus.Settled);
         installment.SettledAmount.Should().Be(2900m, "o cliente pagou com desconto");
-        installment.EntryId.Should().Be(entryId);
+        installment.EntryId.Should().Be(entry.Id);
+
+        // O lançamento nasce do sentido do contrato: a receber vira entrada.
+        entry.Type.Should().Be(EntryType.Income);
+        entry.Amount.Should().Be(2900m);
+        entry.Description.Should().Be("Prefeitura Municipal — parcela 1/3");
         contract.SettledAmount.Should().Be(2900m);
         contract.OpenAmount.Should().Be(6000m);
     }
@@ -110,9 +113,9 @@ public class ContractTests
     public void Settling_twice_is_rejected()
     {
         var contract = NewContract();
-        contract.SettleInstallment(1, FirstDue, 3000m, Guid.CreateVersion7());
+        contract.SettleInstallment(1, FirstDue, 3000m, null, "Contratos");
 
-        contract.Invoking(c => c.SettleInstallment(1, FirstDue, 3000m, Guid.CreateVersion7()))
+        contract.Invoking(c => c.SettleInstallment(1, FirstDue, 3000m, null, "Contratos"))
             .Should().Throw<DomainException>().WithMessage("*já foi liquidada*");
     }
 
@@ -120,12 +123,11 @@ public class ContractTests
     public void Unsettling_returns_the_entry_and_reopens_the_installment()
     {
         var contract = NewContract();
-        var entryId = Guid.CreateVersion7();
-        contract.SettleInstallment(2, FirstDue, 3000m, entryId);
+        var entry = contract.SettleInstallment(2, FirstDue, 3000m, null, "Contratos");
 
         var removed = contract.UnsettleInstallment(2);
 
-        removed.Should().Be(entryId, "o caso de uso precisa saber qual lançamento apagar");
+        removed.Should().Be(entry.Id, "o caso de uso precisa saber qual lançamento apagar");
         contract.FindInstallment(2).Status.Should().Be(InstallmentStatus.Pending);
         contract.SettledAmount.Should().Be(0m);
     }
@@ -138,7 +140,7 @@ public class ContractTests
         contract.FindInstallment(1).IsOverdue(new DateOnly(2026, 10, 4)).Should().BeFalse();
         contract.FindInstallment(1).IsOverdue(new DateOnly(2026, 10, 6)).Should().BeTrue();
 
-        contract.SettleInstallment(1, new DateOnly(2026, 10, 6), 3000m, Guid.CreateVersion7());
+        contract.SettleInstallment(1, new DateOnly(2026, 10, 6), 3000m, null, "Contratos");
         contract.FindInstallment(1).IsOverdue(new DateOnly(2026, 12, 1))
             .Should().BeFalse("parcela liquidada não fica vencida");
     }
@@ -158,7 +160,7 @@ public class ContractTests
     public void A_settled_installment_cannot_be_canceled()
     {
         var contract = NewContract();
-        contract.SettleInstallment(1, FirstDue, 3000m, Guid.CreateVersion7());
+        contract.SettleInstallment(1, FirstDue, 3000m, null, "Contratos");
 
         contract.Invoking(c => c.CancelInstallment(1))
             .Should().Throw<DomainException>().WithMessage("*Estorne antes*");

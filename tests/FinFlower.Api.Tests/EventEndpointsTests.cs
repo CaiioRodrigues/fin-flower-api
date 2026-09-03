@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FinFlower.Application.Auth.Dtos;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Application.Reports.Dtos;
 using FinFlower.Domain.Enums;
@@ -51,8 +52,8 @@ public class EventEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         decimal amount,
         string description = "Lançamento") =>
         client.PostAsJsonAsync(
-            $"/api/events/{eventId}/entries",
-            new CreateEntryRequest(type, description, amount, "Geral", EventDate));
+            "/api/entries",
+            new CreateEntryRequest(type, description, amount, "Geral", EventDate, eventId));
 
     [Fact]
     public async Task Every_event_route_requires_authentication()
@@ -101,17 +102,17 @@ public class EventEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var client = await NewAuthenticatedClientAsync();
         var @event = await CreateEventAsync(client);
         var created = (await (await AddEntryAsync(client, @event.Id, EntryType.Income, 100m))
-            .Content.ReadFromJsonAsync<EntryResponse>(TestJson.Options))!;
+            .Content.ReadFromJsonAsync<LedgerEntryResponse>(TestJson.Options))!;
 
         var edited = await client.PutAsJsonAsync(
-            $"/api/events/{@event.Id}/entries/{created.Id}",
-            new UpdateEntryRequest(EntryType.Expense, "Reembolso", 30m, "Outros", EventDate));
+            $"/api/entries/{created.Id}",
+            new UpdateEntryRequest(EntryType.Expense, "Reembolso", 30m, "Outros", EventDate, @event.Id));
         edited.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var afterEdit = (await client.GetFromJsonAsync<EventDetailsResponse>($"/api/events/{@event.Id}", TestJson.Options))!;
         afterEdit.Result.Should().Be(-30m);
 
-        var removed = await client.DeleteAsync($"/api/events/{@event.Id}/entries/{created.Id}");
+        var removed = await client.DeleteAsync($"/api/entries/{created.Id}");
         removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var afterRemoval = (await client.GetFromJsonAsync<EventDetailsResponse>($"/api/events/{@event.Id}", TestJson.Options))!;
@@ -145,8 +146,8 @@ public class EventEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var @event = await CreateEventAsync(client);
 
         var response = await client.PostAsJsonAsync(
-            $"/api/events/{@event.Id}/entries",
-            new CreateEntryRequest(EntryType.Income, "", -50m, "", EventDate));
+            "/api/entries",
+            new CreateEntryRequest(EntryType.Income, "", -50m, "", EventDate, @event.Id));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
@@ -159,7 +160,7 @@ public class EventEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var alice = await NewAuthenticatedClientAsync();
         var @event = await CreateEventAsync(alice, "Festa da Alice");
         var entry = (await (await AddEntryAsync(alice, @event.Id, EntryType.Income, 500m))
-            .Content.ReadFromJsonAsync<EntryResponse>(TestJson.Options))!;
+            .Content.ReadFromJsonAsync<LedgerEntryResponse>(TestJson.Options))!;
 
         var bob = await NewAuthenticatedClientAsync();
 
@@ -170,7 +171,7 @@ public class EventEndpointsTests(ApiFactory factory) : IClassFixture<ApiFactory>
             await bob.DeleteAsync($"/api/events/{@event.Id}"),
             await bob.PostAsync($"/api/events/{@event.Id}/close", null),
             await AddEntryAsync(bob, @event.Id, EntryType.Income, 1m),
-            await bob.DeleteAsync($"/api/events/{@event.Id}/entries/{entry.Id}"),
+            await bob.DeleteAsync($"/api/entries/{entry.Id}"),
         };
 
         responses.Should().AllSatisfy(r => r.StatusCode.Should().Be(HttpStatusCode.NotFound));

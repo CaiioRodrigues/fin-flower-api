@@ -6,28 +6,6 @@ public sealed record CreateEventRequest(string Name, string? Description, DateOn
 
 public sealed record UpdateEventRequest(string Name, string? Description, DateOnly EventDate);
 
-public sealed record CreateEntryRequest(
-    EntryType Type,
-    string Description,
-    decimal Amount,
-    string Category,
-    DateOnly OccurredOn) : Validators.IEntryFields;
-
-public sealed record UpdateEntryRequest(
-    EntryType Type,
-    string Description,
-    decimal Amount,
-    string Category,
-    DateOnly OccurredOn) : Validators.IEntryFields;
-
-public sealed record EntryResponse(
-    Guid Id,
-    EntryType Type,
-    string Description,
-    decimal Amount,
-    string Category,
-    DateOnly OccurredOn);
-
 /// <summary>Evento na listagem: os totais já vêm calculados, sem os lançamentos.</summary>
 public sealed record EventSummaryResponse(
     Guid Id,
@@ -52,7 +30,7 @@ public sealed record EventDetailsResponse(
     decimal TotalExpense,
     decimal Result,
     bool IsProfitable,
-    IReadOnlyList<EntryResponse> Entries);
+    IReadOnlyList<Entries.Dtos.LedgerEntryResponse> Entries);
 
 /// <summary>Filtros da listagem. Todos opcionais.</summary>
 public sealed record EventFilter(DateOnly? From = null, DateOnly? To = null, EventStatus? Status = null);

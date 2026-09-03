@@ -45,7 +45,7 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                     b.Property<int>("Direction")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("EventId")
+                    b.Property<Guid?>("EventId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsDeleted")
@@ -56,6 +56,9 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("PaymentMethod")
                         .HasColumnType("int");
+
+                    b.Property<Guid?>("QuoteId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateOnly>("SignedOn")
                         .HasColumnType("date");
@@ -70,6 +73,8 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("EventId");
+
+                    b.HasIndex("QuoteId");
 
                     b.HasIndex("OwnerId", "EventId");
 
@@ -132,7 +137,7 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<Guid>("EventId")
+                    b.Property<Guid?>("EventId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("InstallmentId")
@@ -144,6 +149,18 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("OccurredOn")
                         .HasColumnType("date");
 
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RecurringItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("RecurringMonth")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
                     b.Property<int>("Type")
                         .HasColumnType("int");
 
@@ -152,7 +169,17 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("InstallmentId")
+                        .IsUnique()
+                        .HasFilter("[InstallmentId] IS NOT NULL AND [IsDeleted] = 0");
+
                     b.HasIndex("EventId", "OccurredOn");
+
+                    b.HasIndex("OwnerId", "OccurredOn");
+
+                    b.HasIndex("RecurringItemId", "RecurringMonth")
+                        .IsUnique()
+                        .HasFilter("[RecurringItemId] IS NOT NULL AND [IsDeleted] = 0");
 
                     b.ToTable("Entries", (string)null);
                 });
@@ -238,6 +265,172 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                     b.HasIndex("Status", "DueDate");
 
                     b.ToTable("Installments", (string)null);
+                });
+
+            modelBuilder.Entity("FinFlower.Domain.Entities.Quote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClientName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly>("IssuedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("ValidUntil")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("OwnerId", "IssuedOn");
+
+                    b.HasIndex("OwnerId", "Number")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("Quotes", (string)null);
+                });
+
+            modelBuilder.Entity("FinFlower.Domain.Entities.QuoteItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("QuoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuoteId", "Position");
+
+                    b.ToTable("QuoteItems", (string)null);
+                });
+
+            modelBuilder.Entity("FinFlower.Domain.Entities.RecurringItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateOnly?>("EndMonth")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("StartMonth")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "Kind", "IsActive");
+
+                    b.ToTable("RecurringItems", (string)null);
                 });
 
             modelBuilder.Entity("FinFlower.Domain.Entities.RefreshToken", b =>
@@ -329,8 +522,18 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                     b.HasOne("FinFlower.Domain.Entities.Event", null)
                         .WithMany()
                         .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinFlower.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("FinFlower.Domain.Entities.Quote", null)
+                        .WithMany()
+                        .HasForeignKey("QuoteId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("FinFlower.Domain.Entities.ContractAttachment", b =>
@@ -345,10 +548,20 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("FinFlower.Domain.Entities.Entry", b =>
                 {
                     b.HasOne("FinFlower.Domain.Entities.Event", null)
-                        .WithMany("Entries")
+                        .WithMany()
                         .HasForeignKey("EventId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinFlower.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("FinFlower.Domain.Entities.RecurringItem", null)
+                        .WithMany()
+                        .HasForeignKey("RecurringItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("FinFlower.Domain.Entities.Event", b =>
@@ -369,6 +582,38 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FinFlower.Domain.Entities.Quote", b =>
+                {
+                    b.HasOne("FinFlower.Domain.Entities.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinFlower.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinFlower.Domain.Entities.QuoteItem", b =>
+                {
+                    b.HasOne("FinFlower.Domain.Entities.Quote", null)
+                        .WithMany("Items")
+                        .HasForeignKey("QuoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinFlower.Domain.Entities.RecurringItem", b =>
+                {
+                    b.HasOne("FinFlower.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FinFlower.Domain.Entities.RefreshToken", b =>
                 {
                     b.HasOne("FinFlower.Domain.Entities.User", null)
@@ -385,9 +630,9 @@ namespace FinFlower.Infrastructure.Persistence.Migrations
                     b.Navigation("Installments");
                 });
 
-            modelBuilder.Entity("FinFlower.Domain.Entities.Event", b =>
+            modelBuilder.Entity("FinFlower.Domain.Entities.Quote", b =>
                 {
-                    b.Navigation("Entries");
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,6 +1,7 @@
 using FinFlower.Application.Common;
 using FinFlower.Application.Contracts;
 using FinFlower.Application.Contracts.Dtos;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Domain.Common;
 using FinFlower.Domain.Enums;
@@ -25,7 +26,8 @@ public class ContractServiceTests
         var @event = (await ctx.Events.CreateAsync(
             new CreateEventRequest("Festa de Ano Novo", null, EventDate))).Value;
 
-        var contract = (await ctx.Contracts.CreateAsync(@event.Id, request ?? Receivable())).Value;
+        var withEvent = request ?? Receivable();
+        var contract = (await ctx.Contracts.CreateAsync(withEvent with { EventId = @event.Id })).Value;
         return (@event.Id, contract);
     }
 
@@ -120,10 +122,10 @@ public class ContractServiceTests
         await ctx.Contracts.SettleInstallmentAsync(contract.Id, 1, new SettleInstallmentRequest());
         var entry = (await ctx.Events.GetAsync(eventId)).Value.Entries.Single();
 
-        var remove = async () => await ctx.Events.RemoveEntryAsync(eventId, entry.Id);
-        var update = async () => await ctx.Events.UpdateEntryAsync(
-            eventId, entry.Id,
-            new UpdateEntryRequest(EntryType.Income, "Adulterado", 1m, "Outros", EventDate));
+        var remove = async () => await ctx.Entries.DeleteAsync(entry.Id);
+        var update = async () => await ctx.Entries.UpdateAsync(
+            entry.Id,
+            new UpdateEntryRequest(EntryType.Income, "Adulterado", 1m, "Outros", EventDate, eventId));
 
         // Deixar apagar por fora quebraria o vínculo com a parcela.
         await remove.Should().ThrowAsync<DomainException>().WithMessage("*Estorne a parcela*");
@@ -177,7 +179,7 @@ public class ContractServiceTests
         var (eventId, _) = await ArrangeAsync(ctx);
 
         ctx.ActAs();
-        var result = await ctx.Contracts.CreateAsync(eventId, Receivable());
+        var result = await ctx.Contracts.CreateAsync(Receivable() with { EventId = eventId });
 
         result.Error!.Type.Should().Be(ErrorType.NotFound);
     }
@@ -187,9 +189,9 @@ public class ContractServiceTests
     {
         using var ctx = new EventTestContext();
         var (eventId, receivable) = await ArrangeAsync(ctx);
-        await ctx.Contracts.CreateAsync(eventId, new CreateContractRequest(
+        await ctx.Contracts.CreateAsync(new CreateContractRequest(
             ContractDirection.Payable, "Buffet Silva", null, 2000m,
-            PaymentMethod.Pix, 1, FirstDue, new DateOnly(2026, 9, 1)));
+            PaymentMethod.Pix, 1, FirstDue, new DateOnly(2026, 9, 1), eventId));
 
         var payables = await ctx.Contracts.ListAsync(new ContractFilter(Direction: ContractDirection.Payable));
         var ofEvent = await ctx.Contracts.ListAsync(new ContractFilter(EventId: eventId));

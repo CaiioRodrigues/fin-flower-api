@@ -8,9 +8,9 @@ using Microsoft.EntityFrameworkCore;
 namespace FinFlower.Infrastructure.Persistence.Queries;
 
 /// <summary>
-/// Consultas de leitura. As somas de entrada e saída são projetadas para SQL —
-/// o banco agrega e devolve os totais, em vez de trazer todos os lançamentos
-/// para a memória. A subtração final acontece sobre o resultado já reduzido.
+/// Consultas de leitura de evento. Os lançamentos já não vivem dentro do evento,
+/// então os totais vêm de subconsultas correlacionadas sobre <c>Entries</c> — o
+/// banco agrega e devolve os números, em vez de trazer todo o movimento para cá.
 /// </summary>
 public sealed class EventQueries(AppDbContext context) : IEventQueries
 {
@@ -57,46 +57,32 @@ public sealed class EventQueries(AppDbContext context) : IEventQueries
         Guid ownerId,
         CancellationToken cancellationToken = default)
     {
-        var row = await context.Events
-            .AsNoTracking()
-            .Where(e => e.Id == eventId && e.OwnerId == ownerId)
-            .Select(e => new
-            {
-                Totals = new Totals(
-                    e.Id,
-                    e.Name,
-                    e.Description,
-                    e.EventDate,
-                    e.Status,
-                    e.Entries.Where(x => x.Type == EntryType.Income).Sum(x => (decimal?)x.Amount) ?? 0m,
-                    e.Entries.Where(x => x.Type == EntryType.Expense).Sum(x => (decimal?)x.Amount) ?? 0m,
-                    e.Entries.Count),
-                Entries = e.Entries
-                    .OrderByDescending(x => x.OccurredOn)
-                    .Select(x => new EntryResponse(
-                        x.Id,
-                        x.Type,
-                        x.Description,
-                        x.Amount,
-                        x.Category,
-                        x.OccurredOn))
-                    .ToList(),
-            })
+        var totals = await ProjectTotals(
+                context.Events.AsNoTracking().Where(e => e.Id == eventId && e.OwnerId == ownerId))
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (row is null) return null;
+        if (totals is null) return null;
+
+        var rows = await LedgerProjection
+            .Project(
+                context.Entries.AsNoTracking().Where(e => e.EventId == eventId && e.OwnerId == ownerId),
+                context.Events.AsNoTracking())
+            .OrderByDescending(e => e.OccurredOn)
+            .ToListAsync(cancellationToken);
+
+        var entries = rows.Select(LedgerProjection.ToResponse).ToList();
 
         return new EventDetailsResponse(
-            row.Totals.Id,
-            row.Totals.Name,
-            row.Totals.Description,
-            row.Totals.EventDate,
-            row.Totals.Status,
-            row.Totals.Income,
-            row.Totals.Expense,
-            row.Totals.Result,
-            row.Totals.IsProfitable,
-            row.Entries);
+            totals.Id,
+            totals.Name,
+            totals.Description,
+            totals.EventDate,
+            totals.Status,
+            totals.Income,
+            totals.Expense,
+            totals.Result,
+            totals.IsProfitable,
+            entries);
     }
 
     public async Task<CashReportResponse> GetCashReportAsync(
@@ -151,14 +137,18 @@ public sealed class EventQueries(AppDbContext context) : IEventQueries
     /// O cast para <c>decimal?</c> evita que uma soma sem linhas volte nula do
     /// SQL Server. Lançamentos excluídos já ficam de fora pelo filtro global.
     /// </summary>
-    private static IQueryable<Totals> ProjectTotals(IQueryable<Event> query) =>
+    private IQueryable<Totals> ProjectTotals(IQueryable<Event> query) =>
         query.Select(e => new Totals(
             e.Id,
             e.Name,
             e.Description,
             e.EventDate,
             e.Status,
-            e.Entries.Where(x => x.Type == EntryType.Income).Sum(x => (decimal?)x.Amount) ?? 0m,
-            e.Entries.Where(x => x.Type == EntryType.Expense).Sum(x => (decimal?)x.Amount) ?? 0m,
-            e.Entries.Count));
+            context.Entries
+                .Where(x => x.EventId == e.Id && x.Type == EntryType.Income)
+                .Sum(x => (decimal?)x.Amount) ?? 0m,
+            context.Entries
+                .Where(x => x.EventId == e.Id && x.Type == EntryType.Expense)
+                .Sum(x => (decimal?)x.Amount) ?? 0m,
+            context.Entries.Count(x => x.EventId == e.Id)));
 }

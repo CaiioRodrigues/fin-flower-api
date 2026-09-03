@@ -14,23 +14,21 @@ public interface IEventService
     Task<Result> DeleteAsync(Guid eventId, CancellationToken ct = default);
     Task<Result<EventDetailsResponse>> CloseAsync(Guid eventId, CancellationToken ct = default);
     Task<Result<EventDetailsResponse>> ReopenAsync(Guid eventId, CancellationToken ct = default);
-
-    Task<Result<EntryResponse>> AddEntryAsync(Guid eventId, CreateEntryRequest request, CancellationToken ct = default);
-    Task<Result<EntryResponse>> UpdateEntryAsync(Guid eventId, Guid entryId, UpdateEntryRequest request, CancellationToken ct = default);
-    Task<Result> RemoveEntryAsync(Guid eventId, Guid entryId, CancellationToken ct = default);
 }
 
 /// <summary>
-/// Casos de uso de evento e lançamento.
+/// Casos de uso de evento. O evento agrupa lançamentos para apurar resultado por
+/// trabalho — os lançamentos em si vivem no livro-caixa, em <c>EntryService</c>.
 ///
 /// Divisão de responsabilidade com o domínio: aqui ficam os desfechos esperados
 /// da aplicação (não encontrado, sem sessão), devolvidos como <see cref="Result"/>.
-/// Violação de invariante — mexer em evento fechado, valor não positivo — é
-/// lançada pelo domínio como <c>DomainException</c> e vira 400 no middleware.
+/// Violação de invariante — mexer em evento fechado — é lançada pelo domínio como
+/// <c>DomainException</c> e vira 400 no middleware.
 /// </summary>
 public sealed class EventService(
     IEventRepository events,
     IEventQueries queries,
+    IEntryRepository entries,
     ICurrentUser currentUser,
     IDateTimeProvider clock,
     IUnitOfWork unitOfWork) : IEventService
@@ -60,11 +58,7 @@ public sealed class EventService(
         if (currentUser.UserId is not { } ownerId)
             return Result.Failure<EventDetailsResponse>(NoSession);
 
-        var details = await queries.GetDetailsAsync(eventId, ownerId, ct);
-
-        return details is null
-            ? Result.Failure<EventDetailsResponse>(EventNotFound())
-            : Result.Success(details);
+        return await ReadAsync(eventId, ownerId, ct);
     }
 
     public async Task<Result<EventDetailsResponse>> CreateAsync(
@@ -78,14 +72,14 @@ public sealed class EventService(
         events.Add(@event);
         await unitOfWork.SaveChangesAsync(ct);
 
-        return Result.Success(ToDetails(@event));
+        return await ReadAsync(@event.Id, ownerId, ct);
     }
 
-    public async Task<Result<EventDetailsResponse>> UpdateAsync(
+    public Task<Result<EventDetailsResponse>> UpdateAsync(
         Guid eventId,
         UpdateEventRequest request,
         CancellationToken ct = default) =>
-        await MutateAsync(eventId, @event =>
+        MutateAsync(eventId, @event =>
             @event.UpdateDetails(request.Name, request.Description, request.EventDate), ct);
 
     public async Task<Result> DeleteAsync(Guid eventId, CancellationToken ct = default)
@@ -93,7 +87,17 @@ public sealed class EventService(
         var loaded = await LoadAsync(eventId, ct);
         if (loaded.IsFailure) return Result.Failure(loaded.Error!);
 
-        // Exclusão lógica: o evento sai das listagens e do caixa, mas o histórico fica.
+        // O lançamento é do caixa, não do evento: apagar o evento não pode fazer
+        // dinheiro sumir, nem deixar lançamento apontando para um evento que já
+        // não existe. Quem opera decide o destino de cada um.
+        var linked = await entries.ListByEventAsync(eventId, loaded.Value.OwnerId, ct);
+        if (linked.Count > 0)
+        {
+            return Result.Failure(Error.Conflict(
+                "event.has_entries",
+                $"Este evento tem {linked.Count} lançamento(s). Mova-os ou exclua-os antes."));
+        }
+
         loaded.Value.MarkAsDeleted(clock.UtcNow);
         await unitOfWork.SaveChangesAsync(ct);
 
@@ -105,60 +109,6 @@ public sealed class EventService(
 
     public Task<Result<EventDetailsResponse>> ReopenAsync(Guid eventId, CancellationToken ct = default) =>
         MutateAsync(eventId, @event => @event.Reopen(), ct);
-
-    public async Task<Result<EntryResponse>> AddEntryAsync(
-        Guid eventId,
-        CreateEntryRequest request,
-        CancellationToken ct = default)
-    {
-        var loaded = await LoadAsync(eventId, ct);
-        if (loaded.IsFailure) return Result.Failure<EntryResponse>(loaded.Error!);
-
-        var entry = loaded.Value.AddEntry(
-            request.Type,
-            request.Description,
-            request.Amount,
-            request.Category,
-            request.OccurredOn);
-
-        await unitOfWork.SaveChangesAsync(ct);
-
-        return Result.Success(ToResponse(entry));
-    }
-
-    public async Task<Result<EntryResponse>> UpdateEntryAsync(
-        Guid eventId,
-        Guid entryId,
-        UpdateEntryRequest request,
-        CancellationToken ct = default)
-    {
-        var loaded = await LoadAsync(eventId, ct);
-        if (loaded.IsFailure) return Result.Failure<EntryResponse>(loaded.Error!);
-
-        var @event = loaded.Value;
-        @event.UpdateEntry(
-            entryId,
-            request.Type,
-            request.Description,
-            request.Amount,
-            request.Category,
-            request.OccurredOn);
-
-        await unitOfWork.SaveChangesAsync(ct);
-
-        return Result.Success(ToResponse(@event.Entries.First(e => e.Id == entryId)));
-    }
-
-    public async Task<Result> RemoveEntryAsync(Guid eventId, Guid entryId, CancellationToken ct = default)
-    {
-        var loaded = await LoadAsync(eventId, ct);
-        if (loaded.IsFailure) return Result.Failure(loaded.Error!);
-
-        loaded.Value.RemoveEntry(entryId, clock.UtcNow);
-        await unitOfWork.SaveChangesAsync(ct);
-
-        return Result.Success();
-    }
 
     /// <summary>Carrega o agregado já filtrado pelo dono da sessão.</summary>
     private async Task<Result<Event>> LoadAsync(Guid eventId, CancellationToken ct)
@@ -184,26 +134,19 @@ public sealed class EventService(
         mutate(loaded.Value);
         await unitOfWork.SaveChangesAsync(ct);
 
-        return Result.Success(ToDetails(loaded.Value));
+        return await ReadAsync(eventId, loaded.Value.OwnerId, ct);
     }
 
-    private static EventDetailsResponse ToDetails(Event @event) => new(
-        @event.Id,
-        @event.Name,
-        @event.Description,
-        @event.EventDate,
-        @event.Status,
-        @event.TotalIncome,
-        @event.TotalExpense,
-        @event.Result,
-        @event.IsProfitable,
-        [.. @event.Entries.Where(e => !e.IsDeleted).OrderByDescending(e => e.OccurredOn).Select(ToResponse)]);
+    /// <summary>
+    /// Devolve o evento pelo lado de leitura: os totais são somados no banco a
+    /// partir dos lançamentos, que já não vivem dentro do agregado.
+    /// </summary>
+    private async Task<Result<EventDetailsResponse>> ReadAsync(Guid eventId, Guid ownerId, CancellationToken ct)
+    {
+        var details = await queries.GetDetailsAsync(eventId, ownerId, ct);
 
-    private static EntryResponse ToResponse(Entry entry) => new(
-        entry.Id,
-        entry.Type,
-        entry.Description,
-        entry.Amount,
-        entry.Category,
-        entry.OccurredOn);
+        return details is null
+            ? Result.Failure<EventDetailsResponse>(EventNotFound())
+            : Result.Success(details);
+    }
 }

@@ -16,6 +16,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, IDateTi
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Installment> Installments => Set<Installment>();
     public DbSet<ContractAttachment> ContractAttachments => Set<ContractAttachment>();
+    public DbSet<RecurringItem> RecurringItems => Set<RecurringItem>();
+    public DbSet<Quote> Quotes => Set<Quote>();
+    public DbSet<QuoteItem> QuoteItems => Set<QuoteItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

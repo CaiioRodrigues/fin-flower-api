@@ -1,4 +1,8 @@
+using FinFlower.Application.Contracts;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
+using FinFlower.Application.Quotes.Dtos;
+using FinFlower.Domain.ValueObjects;
 using FinFlower.Infrastructure.Persistence;
 using FinFlower.Infrastructure.Persistence.Queries;
 using FluentAssertions;
@@ -42,6 +46,68 @@ public class SqlTranslationTests
             () => queries.GetDetailsAsync(Guid.CreateVersion7(), ownerId),
             () => queries.GetCashReportAsync(ownerId, null, null),
         };
+
+        await AssertTranslatesAsync(calls);
+    }
+
+    [Fact]
+    public async Task Every_ledger_and_cash_query_translates_to_sql_server()
+    {
+        using var context = SqlServerContext();
+        var queries = new EntryQueries(context);
+        var ownerId = Guid.CreateVersion7();
+
+        var calls = new Func<Task>[]
+        {
+            () => queries.ListAsync(ownerId, new EntryFilter(), 1, 50),
+            () => queries.ListAsync(ownerId, new EntryFilter(
+                From: new DateOnly(2026, 1, 1),
+                To: new DateOnly(2026, 12, 31),
+                Type: Domain.Enums.EntryType.Expense,
+                Source: Domain.Enums.EntrySource.Recurring,
+                EventId: Guid.CreateVersion7(),
+                Category: "Estrutura",
+                Search: "aluguel"), 2, 25),
+            () => queries.ListAsync(ownerId, new EntryFilter(WithoutEvent: true), 1, 50),
+            () => queries.GetAsync(Guid.CreateVersion7(), ownerId),
+
+            // A mais arriscada do sistema: agrupamento com junção à esquerda no
+            // item fixo, para separar pró-labore de gasto fixo dentro do mês.
+            () => queries.GetMonthlyBucketsAsync(ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12)),
+            () => queries.GetBalanceBeforeAsync(ownerId, new YearMonth(2026, 1)),
+            () => queries.ListCategoriesAsync(ownerId),
+        };
+
+        await AssertTranslatesAsync(calls);
+    }
+
+    [Fact]
+    public async Task Every_quote_and_contract_query_translates_to_sql_server()
+    {
+        using var context = SqlServerContext();
+        var quotes = new QuoteQueries(context);
+        var contracts = new ContractQueries(context);
+        var ownerId = Guid.CreateVersion7();
+        var today = new DateOnly(2026, 9, 1);
+
+        var calls = new Func<Task>[]
+        {
+            () => quotes.ListAsync(ownerId, new QuoteFilter(), today),
+            () => quotes.ListAsync(ownerId, new QuoteFilter(
+                Status: Domain.Enums.QuoteStatus.Sent,
+                EventId: Guid.CreateVersion7(),
+                Search: "prefeitura"), today),
+            () => quotes.GetAsync(Guid.CreateVersion7(), ownerId, today),
+            () => contracts.ListAsync(ownerId, new ContractFilter(), today),
+            () => contracts.GetAsync(Guid.CreateVersion7(), ownerId, today),
+            () => contracts.GetCashFlowAsync(ownerId, today, 6),
+        };
+
+        await AssertTranslatesAsync(calls);
+    }
+
+    private static async Task AssertTranslatesAsync(Func<Task>[] calls)
+    {
 
         foreach (var call in calls)
         {

@@ -4,8 +4,9 @@ using FinFlower.Domain.Enums;
 namespace FinFlower.Domain.Entities;
 
 /// <summary>
-/// Contrato de um evento — o previsto. Raiz de agregação própria: se vivesse
-/// dentro do <see cref="Event"/>, abrir um evento carregaria os PDFs junto.
+/// O previsto: quanto foi contratado, em quantas parcelas, para quando. Raiz de
+/// agregação própria — se vivesse dentro do <see cref="Event"/>, abrir um evento
+/// carregaria os PDFs junto, e um contrato sem evento não teria onde morar.
 /// </summary>
 public sealed class Contract : AuditableEntity
 {
@@ -18,7 +19,6 @@ public sealed class Contract : AuditableEntity
     private Contract() { } // EF Core
 
     public Contract(
-        Guid eventId,
         Guid ownerId,
         ContractDirection direction,
         string counterparty,
@@ -27,15 +27,17 @@ public sealed class Contract : AuditableEntity
         PaymentMethod paymentMethod,
         int installmentCount,
         DateOnly firstDueDate,
-        DateOnly signedOn)
+        DateOnly signedOn,
+        Guid? eventId = null,
+        Guid? quoteId = null)
     {
-        if (eventId == Guid.Empty) throw new DomainException("O contrato precisa de um evento.");
         if (ownerId == Guid.Empty) throw new DomainException("O contrato precisa de um dono.");
 
         if (installmentCount is < 1 or > MaxInstallments)
             throw new DomainException($"O número de parcelas deve estar entre 1 e {MaxInstallments}.");
 
         EventId = eventId;
+        QuoteId = quoteId;
         OwnerId = ownerId;
         Direction = direction;
         Counterparty = Guard.AgainstNullOrWhiteSpace(counterparty, "contratante", MaxCounterpartyLength);
@@ -47,9 +49,13 @@ public sealed class Contract : AuditableEntity
         GenerateInstallments(installmentCount, firstDueDate);
     }
 
-    public Guid EventId { get; private set; }
+    /// <summary>Evento a que o contrato se refere, quando há um.</summary>
+    public Guid? EventId { get; private set; }
 
-    /// <summary>Dono, replicado do evento: toda consulta filtra por ele.</summary>
+    /// <summary>Orçamento que originou o contrato, quando ele nasceu de uma proposta.</summary>
+    public Guid? QuoteId { get; private set; }
+
+    /// <summary>Dono do contrato: toda consulta filtra por ele.</summary>
     public Guid OwnerId { get; private set; }
 
     public ContractDirection Direction { get; private set; }
@@ -83,8 +89,11 @@ public sealed class Contract : AuditableEntity
         string counterparty,
         string? description,
         PaymentMethod paymentMethod,
-        DateOnly signedOn)
+        DateOnly signedOn,
+        Guid? eventId)
     {
+        EventId = eventId;
+
         // O valor total e o parcelamento não mudam por aqui: alterá-los com
         // parcelas já liquidadas deixaria o contrato incoerente com o caixa.
         Direction = direction;
@@ -99,11 +108,32 @@ public sealed class Contract : AuditableEntity
         ?? throw new DomainException($"Parcela {number} não encontrada neste contrato.");
 
     /// <summary>
-    /// Liquida uma parcela. O lançamento correspondente é criado pelo caso de uso,
-    /// que conhece o evento; aqui fica só o vínculo.
+    /// Liquida uma parcela e devolve o lançamento que ela gera no caixa. O
+    /// sentido do contrato decide o sentido do dinheiro: a receber entra,
+    /// a pagar sai.
     /// </summary>
-    public void SettleInstallment(int number, DateOnly settledOn, decimal settledAmount, Guid entryId) =>
-        FindInstallment(number).Settle(settledOn, settledAmount, entryId);
+    public Entry SettleInstallment(
+        int number,
+        DateOnly settledOn,
+        decimal settledAmount,
+        string? description,
+        string category)
+    {
+        var installment = FindInstallment(number);
+
+        var entry = Entry.FromInstallment(
+            OwnerId,
+            installment.Id,
+            Direction == ContractDirection.Receivable ? EntryType.Income : EntryType.Expense,
+            description ?? $"{Counterparty} — parcela {number}/{_installments.Count}",
+            settledAmount,
+            category,
+            settledOn,
+            EventId);
+
+        installment.Settle(settledOn, settledAmount, entry.Id);
+        return entry;
+    }
 
     /// <summary>Desfaz a liquidação e devolve o lançamento a ser removido.</summary>
     public Guid UnsettleInstallment(int number) => FindInstallment(number).Unsettle();

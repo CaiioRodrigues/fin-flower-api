@@ -37,9 +37,9 @@ public class ContractEndpointsTests(ApiFactory factory) : IClassFixture<ApiFacto
                 new CreateEventRequest("Festa de Ano Novo", null, EventDate)))
             .Content.ReadFromJsonAsync<EventDetailsResponse>(TestJson.Options))!;
 
-        var response = await client.PostAsJsonAsync($"/api/events/{@event.Id}/contracts", new CreateContractRequest(
+        var response = await client.PostAsJsonAsync("/api/contracts", new CreateContractRequest(
             ContractDirection.Receivable, "Prefeitura Municipal", "Show de encerramento",
-            9000m, PaymentMethod.Boleto, 3, FirstDue, new DateOnly(2026, 9, 1)));
+            9000m, PaymentMethod.Boleto, 3, FirstDue, new DateOnly(2026, 9, 1), @event.Id));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (@event.Id, (await response.Content.ReadFromJsonAsync<ContractResponse>(TestJson.Options))!);
@@ -198,8 +198,8 @@ public class ContractEndpointsTests(ApiFactory factory) : IClassFixture<ApiFacto
         var client = await NewAuthenticatedClientAsync();
         var (eventId, _) = await ArrangeAsync(client);
 
-        var response = await client.PostAsJsonAsync($"/api/events/{eventId}/contracts", new CreateContractRequest(
-            ContractDirection.Receivable, "", null, -100m, PaymentMethod.Pix, 0, FirstDue, EventDate));
+        var response = await client.PostAsJsonAsync("/api/contracts", new CreateContractRequest(
+            ContractDirection.Receivable, "", null, -100m, PaymentMethod.Pix, 0, FirstDue, EventDate, eventId));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();

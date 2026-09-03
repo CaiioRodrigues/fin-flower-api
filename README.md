@@ -27,15 +27,15 @@ Fluxo de caixa = realizado + parcelas em aberto por mês
 | Área | Situação |
 |---|---|
 | Solution em 4 camadas + testes | pronto |
-| Domínio de evento e lançamento | pronto |
-| Migration inicial (SQL Server) | pronto |
 | Autenticação: registro, login, refresh, logout, `/me` | pronto |
-| Eventos e lançamentos (CRUD, fechar/reabrir) | pronto |
-| Relatório de caixa consolidado | pronto |
+| **Livro-caixa: entrada e saída, com ou sem evento** | pronto |
+| **Fechamento mensal com saldo acumulado** | pronto |
+| **Gastos fixos e pró-labore, gerados por competência** | pronto |
+| **Orçamentos linha a linha, que viram contrato ao aprovar** | pronto |
+| Eventos como agrupador (CRUD, fechar/reabrir) | pronto |
 | Contratos parcelados, com PDF anexado | pronto |
 | Fluxo de caixa: vencidos, mês corrente e previsão | pronto |
 | Exportação dos relatórios em Excel e PDF | pronto |
-| Front-end para contratos e fluxo de caixa | próxima etapa |
 
 ## Arquitetura
 
@@ -69,6 +69,59 @@ Decisões que sustentam o desenho:
   entra no `WHERE`, não numa checagem posterior — evento de outra pessoa responde 404.
 - **Nome de código em inglês, mensagens ao usuário em português.** O front segue a
   mesma divisão.
+
+### O caixa é o centro, o evento é um atributo
+
+O sistema começou girando em torno do evento: o lançamento vivia dentro dele e
+não existia dinheiro fora de um. Isso não descreve um negócio de verdade —
+aluguel, contador, pró-labore e software não pertencem a evento nenhum, e mesmo
+assim são as saídas mais previsíveis do mês.
+
+Hoje **`Entry` é a raiz**: tem dono próprio e um `EventId` opcional. O evento
+continua existindo para apurar resultado por trabalho realizado, mas virou um
+rótulo do lançamento, não o dono dele.
+
+A regra "evento fechado não muda" sobreviveu à inversão. Ela continua no
+domínio, em `Event.EnsureAcceptsChanges()`; o que mudou foi quem pergunta —
+antes o agregado se protegia sozinho, agora o caso de uso carrega o evento e
+consulta antes de criar, mover ou remover um lançamento ligado a ele.
+
+Consequência prática: excluir um evento com lançamentos é recusado. O dinheiro é
+do caixa, e apagar o evento não pode fazê-lo sumir nem deixar lançamento
+apontando para um evento que já não existe.
+
+### Competência: `YearMonth`, não `DateOnly`
+
+Todo número do caixa é apurado por mês, e usar uma data para representar "mês"
+convida ao erro clássico de `>= 01/09` deixar o resto de setembro de fora.
+`YearMonth` é um `readonly record struct` com comparação, aritmética de meses e
+`DayOrLast(dia)` — que é como um gasto fixo todo dia 31 cai em 28/02 sem estourar.
+
+### Gasto fixo e pró-labore: um motor, duas telas
+
+São a mesma mecânica — um valor que se repete todo mês — então há um agregado só,
+`RecurringItem`, separado por `RecurringKind`. O pró-labore precisa ser
+distinguível porque **retirada de sócio não é custo do negócio**, e o fechamento
+mensal responde as duas coisas em separado.
+
+Gerar a competência é **idempotente**: quem opera vai clicar duas vezes. A
+consulta prévia evita o trabalho e um índice único filtrado em
+`(RecurringItemId, RecurringMonth)` fecha a porta mesmo com duas requisições
+simultâneas.
+
+Alterar o valor do item vale **para frente**: o aluguel de março já foi pago, e o
+reajuste não reescreve o passado.
+
+### Orçamento → contrato → caixa
+
+`Quote` é a proposta montada linha a linha, com quantidade, unitário e desconto.
+Aprovar é o único ponto em que uma venda vira previsão de caixa: gera um
+`Contract` com as parcelas, na mesma transação, e grava o elo nos dois lados —
+um orçamento vira um contrato só.
+
+O total de cada linha é arredondado **antes** da soma, porque o cliente confere
+linha a linha: `3 × R$ 33,33 = R$ 99,99`. Guardar `33,333` e arredondar no fim
+daria R$ 100,00 numa linha que mostra R$ 33,33, e o centavo ficaria inexplicável.
 
 ### Realizado x previsto
 
@@ -278,16 +331,33 @@ Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProj
 | `DELETE` | `/api/events/{id}` | Bearer | Exclui o evento (exclusão lógica) |
 | `POST` | `/api/events/{id}/close` | Bearer | Fecha o evento e congela o resultado |
 | `POST` | `/api/events/{id}/reopen` | Bearer | Reabre um evento fechado |
-| `POST` | `/api/events/{id}/entries` | Bearer | Cadastra um lançamento no evento |
-| `PUT` | `/api/events/{id}/entries/{entryId}` | Bearer | Altera um lançamento |
-| `DELETE` | `/api/events/{id}/entries/{entryId}` | Bearer | Remove um lançamento |
-| `GET` | `/api/reports/cash` | Bearer | Caixa consolidado (realizado) |
+| `GET` | `/api/entries` | Bearer | Livro-caixa, com filtros e totais do período |
+| `POST` | `/api/entries` | Bearer | Registra uma entrada ou saída |
+| `GET` `PUT` `DELETE` | `/api/entries/{id}` | Bearer | Abre, altera e remove um lançamento |
+| `GET` | `/api/entries/categories` | Bearer | Categorias já usadas, para sugerir no formulário |
+| `GET` | `/api/cash/monthly` | Bearer | Caixa mês a mês, com saldo acumulado |
+| `GET` | `/api/recurring-items` | Bearer | Gastos fixos e pró-labore, com a situação da competência |
+| `POST` | `/api/recurring-items` | Bearer | Cadastra um item fixo |
+| `PUT` `DELETE` | `/api/recurring-items/{id}` | Bearer | Altera e exclui |
+| `POST` | `/api/recurring-items/{id}/activate` | Bearer | Reativa o item |
+| `POST` | `/api/recurring-items/{id}/deactivate` | Bearer | Suspende sem apagar o histórico |
+| `POST` | `/api/recurring-items/generate` | Bearer | Lança a competência no caixa (idempotente) |
+| `GET` | `/api/quotes` | Bearer | Lista os orçamentos |
+| `POST` | `/api/quotes` | Bearer | Abre um orçamento em rascunho |
+| `GET` `PUT` `DELETE` | `/api/quotes/{id}` | Bearer | Abre, altera e exclui |
+| `POST` | `/api/quotes/{id}/items` | Bearer | Acrescenta uma linha |
+| `PUT` `DELETE` | `/api/quotes/{id}/items/{itemId}` | Bearer | Altera e remove a linha |
+| `PUT` | `/api/quotes/{id}/discount` | Bearer | Aplica desconto sobre o subtotal |
+| `POST` | `/api/quotes/{id}/send` \| `/reject` \| `/reopen` | Bearer | Move o orçamento pelo fluxo |
+| `POST` | `/api/quotes/{id}/approve` | Bearer | Aprova e gera o contrato com as parcelas |
+| `GET` | `/api/reports/monthly/export` | Bearer | Caixa mês a mês em `xlsx` ou `pdf` |
+| `GET` | `/api/reports/cash` | Bearer | Caixa consolidado por evento |
 | `GET` | `/api/reports/cash-flow` | Bearer | Fluxo de caixa: vencidos, mês corrente e previsão |
 | `GET` | `/api/reports/cash/export` | Bearer | Caixa por evento em `xlsx` ou `pdf` |
 | `GET` | `/api/reports/cash-flow/export` | Bearer | Fluxo de caixa em `xlsx` ou `pdf` |
 | `GET` | `/api/reports/installments/export` | Bearer | Parcelas em aberto em `xlsx` ou `pdf` |
 | `GET` | `/api/events/{id}/statement/export` | Bearer | Extrato do evento em `xlsx` ou `pdf` |
-| `POST` | `/api/events/{id}/contracts` | Bearer | Cria um contrato com as parcelas geradas |
+| `POST` | `/api/contracts` | Bearer | Cria um contrato (evento opcional) com as parcelas |
 | `GET` | `/api/contracts` | Bearer | Lista contratos, com o quanto já foi liquidado |
 | `GET` `PUT` `DELETE` | `/api/contracts/{id}` | Bearer | Abre, altera e exclui |
 | `POST` | `/api/contracts/{id}/installments/{n}/settle` | Bearer | Liquida e gera o lançamento |
@@ -298,7 +368,14 @@ Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProj
 | `POST` `GET` `DELETE` | `/api/contracts/{id}/document` | Bearer | Anexa, baixa e remove o PDF |
 | `GET` | `/health` | — | Disponibilidade |
 
-A listagem aceita `?from=`, `?to=` e `?status=Open|Closed`; o caixa aceita `?from=` e `?to=`.
+O livro-caixa aceita `?from=`, `?to=`, `?type=`, `?source=`, `?eventId=`,
+`?withoutEvent=`, `?category=`, `?search=`, `?page=` e `?pageSize=`. Os totais
+que ele devolve são **do filtro inteiro, não da página**: quem olha o mês quer o
+saldo do mês, ainda que esteja vendo as cinquenta primeiras linhas.
+
+Competência viaja como `aaaa-mm` (`?from=2026-01&to=2026-12`). Em branco, o
+fechamento mensal devolve os doze meses que terminam no mês corrente.
+
 Enums viajam como texto no JSON (`"Income"`, `"Expense"`, `"Open"`, `"Closed"`).
 
 ### Exemplo do caixa
