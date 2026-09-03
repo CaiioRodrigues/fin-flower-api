@@ -5,6 +5,7 @@ using System.Text;
 using ClosedXML.Excel;
 using FinFlower.Application.Auth.Dtos;
 using FinFlower.Application.Contracts.Dtos;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Domain.Enums;
 using FluentAssertions;
@@ -33,13 +34,13 @@ public class ReportExportTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 new CreateEventRequest("Festa de Ano Novo", "Réveillon", EventDate)))
             .Content.ReadFromJsonAsync<EventDetailsResponse>(TestJson.Options))!;
 
-        await client.PostAsJsonAsync($"/api/events/{@event.Id}/entries", new CreateEntryRequest(
-            EntryType.Expense, "Aluguel do espaço", 2500m, "Estrutura", EventDate));
+        await client.PostAsJsonAsync("/api/entries", new CreateEntryRequest(
+            EntryType.Expense, "Aluguel do espaço", 2500m, "Estrutura", EventDate, @event.Id));
 
-        var contract = (await (await client.PostAsJsonAsync($"/api/events/{@event.Id}/contracts",
+        var contract = (await (await client.PostAsJsonAsync("/api/contracts",
                 new CreateContractRequest(
                     ContractDirection.Receivable, "Prefeitura Municipal", "Show de encerramento",
-                    9000m, PaymentMethod.Boleto, 3, new DateOnly(2026, 10, 5), new DateOnly(2026, 9, 1))))
+                    9000m, PaymentMethod.Boleto, 3, new DateOnly(2026, 10, 5), new DateOnly(2026, 9, 1), @event.Id)))
             .Content.ReadFromJsonAsync<ContractResponse>(TestJson.Options))!;
 
         return (@event.Id, contract);

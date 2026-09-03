@@ -166,6 +166,10 @@ if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapEventEndpoints();
+app.MapEntryEndpoints();
+app.MapCashEndpoints();
+app.MapRecurringEndpoints();
+app.MapQuoteEndpoints();
 app.MapContractEndpoints();
 app.MapReportEndpoints();
 

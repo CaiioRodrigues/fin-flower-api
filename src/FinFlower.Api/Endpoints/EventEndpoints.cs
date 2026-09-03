@@ -25,12 +25,9 @@ public static class EventEndpoints
         events.MapPost("/{eventId:guid}/close", Close).WithSummary("Fecha o evento e congela o resultado.");
         events.MapPost("/{eventId:guid}/reopen", Reopen).WithSummary("Reabre um evento fechado.");
 
-        var entries = events.MapGroup("/{eventId:guid}/entries").WithTags("Lançamentos");
-
-        entries.MapPost("/", AddEntry).WithSummary("Cadastra um lançamento no evento.");
-        entries.MapPut("/{entryId:guid}", UpdateEntry).WithSummary("Altera um lançamento.");
-        entries.MapDelete("/{entryId:guid}", RemoveEntry).WithSummary("Remove um lançamento.");
-
+        // Os lançamentos do evento são criados e alterados pelo livro-caixa,
+        // em /api/entries com o eventId no corpo: o lançamento é do caixa, e o
+        // evento é um atributo dele.
         return app;
     }
 
@@ -80,38 +77,4 @@ public static class EventEndpoints
 
     private static async Task<IResult> Reopen(Guid eventId, IEventService service, CancellationToken cancellationToken) =>
         (await service.ReopenAsync(eventId, cancellationToken)).ToHttpResult();
-
-    private static async Task<IResult> AddEntry(
-        Guid eventId,
-        [FromBody] CreateEntryRequest request,
-        IValidator<CreateEntryRequest> validator,
-        IEventService service,
-        CancellationToken cancellationToken)
-    {
-        if (await validator.ValidateRequestAsync(request, cancellationToken) is { } invalid) return invalid;
-
-        var result = await service.AddEntryAsync(eventId, request, cancellationToken);
-        return result.ToHttpResult(response =>
-            Results.Created($"/api/events/{eventId}/entries/{response.Id}", response));
-    }
-
-    private static async Task<IResult> UpdateEntry(
-        Guid eventId,
-        Guid entryId,
-        [FromBody] UpdateEntryRequest request,
-        IValidator<UpdateEntryRequest> validator,
-        IEventService service,
-        CancellationToken cancellationToken)
-    {
-        if (await validator.ValidateRequestAsync(request, cancellationToken) is { } invalid) return invalid;
-
-        return (await service.UpdateEntryAsync(eventId, entryId, request, cancellationToken)).ToHttpResult();
-    }
-
-    private static async Task<IResult> RemoveEntry(
-        Guid eventId,
-        Guid entryId,
-        IEventService service,
-        CancellationToken cancellationToken) =>
-        (await service.RemoveEntryAsync(eventId, entryId, cancellationToken)).ToHttpResult();
 }

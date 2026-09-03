@@ -17,6 +17,7 @@ public static class ContractEndpoints
             .RequireAuthorization();
 
         contracts.MapGet("/", List).WithSummary("Lista os contratos, com o quanto já foi liquidado.");
+        contracts.MapPost("/", Create).WithSummary("Cria um contrato, com ou sem evento, e gera as parcelas.");
         contracts.MapGet("/{contractId:guid}", Get).WithSummary("Abre um contrato com suas parcelas.");
         contracts.MapPut("/{contractId:guid}", Update).WithSummary("Altera os dados do contrato.");
         contracts.MapDelete("/{contractId:guid}", Delete).WithSummary("Exclui o contrato.");
@@ -25,7 +26,7 @@ public static class ContractEndpoints
             .WithTags("Parcelas");
 
         installments.MapPost("/settle", Settle)
-            .WithSummary("Liquida a parcela e gera o lançamento correspondente no evento.");
+            .WithSummary("Liquida a parcela e gera o lançamento correspondente no caixa.");
         installments.MapPost("/unsettle", Unsettle)
             .WithSummary("Estorna a parcela e remove o lançamento gerado.");
         installments.MapPost("/cancel", Cancel).WithSummary("Cancela a parcela.");
@@ -40,12 +41,6 @@ public static class ContractEndpoints
             .DisableAntiforgery();
         document.MapGet("/", Download).WithSummary("Baixa o PDF anexado.");
         document.MapDelete("/", RemoveDocument).WithSummary("Remove o PDF anexado.");
-
-        // Criar contrato nasce do evento: ele é o dono do contexto.
-        app.MapPost("/api/events/{eventId:guid}/contracts", Create)
-            .WithTags("Contratos")
-            .WithSummary("Cria um contrato no evento, com as parcelas geradas.")
-            .RequireAuthorization();
 
         return app;
     }
@@ -66,7 +61,6 @@ public static class ContractEndpoints
         (await service.GetAsync(contractId, cancellationToken)).ToHttpResult();
 
     private static async Task<IResult> Create(
-        Guid eventId,
         [FromBody] CreateContractRequest request,
         IValidator<CreateContractRequest> validator,
         IContractService service,
@@ -74,7 +68,7 @@ public static class ContractEndpoints
     {
         if (await validator.ValidateRequestAsync(request, cancellationToken) is { } invalid) return invalid;
 
-        var result = await service.CreateAsync(eventId, request, cancellationToken);
+        var result = await service.CreateAsync(request, cancellationToken);
         return result.ToHttpResult(response => Results.Created($"/api/contracts/{response.Id}", response));
     }
 

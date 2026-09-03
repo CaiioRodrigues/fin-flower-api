@@ -10,7 +10,7 @@ public interface IContractService
 {
     Task<Result<IReadOnlyList<ContractSummaryResponse>>> ListAsync(ContractFilter filter, CancellationToken ct = default);
     Task<Result<ContractResponse>> GetAsync(Guid contractId, CancellationToken ct = default);
-    Task<Result<ContractResponse>> CreateAsync(Guid eventId, CreateContractRequest request, CancellationToken ct = default);
+    Task<Result<ContractResponse>> CreateAsync(CreateContractRequest request, CancellationToken ct = default);
     Task<Result<ContractResponse>> UpdateAsync(Guid contractId, UpdateContractRequest request, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid contractId, CancellationToken ct = default);
 
@@ -34,6 +34,7 @@ public sealed class ContractService(
     IContractRepository contracts,
     IContractQueries queries,
     IEventRepository events,
+    IEntryRepository entries,
     ICurrentUser currentUser,
     IDateTimeProvider clock,
     IUnitOfWork unitOfWork) : IContractService
@@ -63,20 +64,19 @@ public sealed class ContractService(
     }
 
     public async Task<Result<ContractResponse>> CreateAsync(
-        Guid eventId,
         CreateContractRequest request,
         CancellationToken ct = default)
     {
         if (currentUser.UserId is not { } ownerId)
             return Result.Failure<ContractResponse>(NoSession);
 
-        // Carrega o evento pelo dono: contrato em evento alheio é 404, como tudo mais.
-        var @event = await events.GetByIdAsync(eventId, ownerId, ct);
-        if (@event is null)
-            return Result.Failure<ContractResponse>(Error.NotFound("event.not_found", "Evento não encontrado."));
+        // O evento é opcional: existe contrato de aluguel e de fornecedor que
+        // não pertence a trabalho nenhum. Quando há, ele precisa existir e ser
+        // do mesmo dono — contrato em evento alheio é 404, como tudo mais.
+        var linked = await EnsureEventAcceptsAsync(request.EventId, ownerId, ct);
+        if (linked.IsFailure) return Result.Failure<ContractResponse>(linked.Error!);
 
         var contract = new Contract(
-            eventId,
             ownerId,
             request.Direction,
             request.Counterparty,
@@ -85,7 +85,8 @@ public sealed class ContractService(
             request.PaymentMethod,
             request.InstallmentCount,
             request.FirstDueDate,
-            request.SignedOn);
+            request.SignedOn,
+            request.EventId);
 
         contracts.Add(contract);
         await unitOfWork.SaveChangesAsync(ct);
@@ -102,7 +103,8 @@ public sealed class ContractService(
             request.Counterparty,
             request.Description,
             request.PaymentMethod,
-            request.SignedOn), ct);
+            request.SignedOn,
+            request.EventId), ct);
 
     public async Task<Result> DeleteAsync(Guid contractId, CancellationToken ct = default)
     {
@@ -136,28 +138,24 @@ public sealed class ContractService(
         if (loaded.IsFailure) return Result.Failure<ContractResponse>(loaded.Error!);
 
         var contract = loaded.Value;
-        var installment = contract.FindInstallment(number);
 
-        var @event = await events.GetByIdAsync(contract.EventId, contract.OwnerId, ct);
-        if (@event is null)
-            return Result.Failure<ContractResponse>(Error.NotFound("event.not_found", "Evento não encontrado."));
+        var linked = await EnsureEventAcceptsAsync(contract.EventId, contract.OwnerId, ct);
+        if (linked.IsFailure) return Result.Failure<ContractResponse>(linked.Error!);
 
         // Em branco, valem o valor e a data da própria parcela: o caso comum é
         // pagar o combinado, e o formulário chega pré-preenchido com isso.
+        var installment = contract.FindInstallment(number);
         var settledOn = request.SettledOn ?? installment.DueDate;
         var amount = request.Amount ?? installment.Amount;
 
-        // O lançamento nasce do sentido do contrato: a receber vira entrada,
-        // a pagar vira saída.
-        var entry = @event.AddEntry(
-            contract.Direction == ContractDirection.Receivable ? EntryType.Income : EntryType.Expense,
-            request.Description ?? $"{contract.Counterparty} — parcela {number}/{contract.Installments.Count}",
-            amount,
-            request.Category ?? "Contratos",
+        var entry = contract.SettleInstallment(
+            number,
             settledOn,
-            installment.Id);
+            amount,
+            request.Description,
+            request.Category ?? "Contratos");
 
-        contract.SettleInstallment(number, settledOn, amount, entry.Id);
+        entries.Add(entry);
         await unitOfWork.SaveChangesAsync(ct);
 
         return await ReadAsync(contractId, contract.OwnerId, ct);
@@ -173,14 +171,15 @@ public sealed class ContractService(
 
         var contract = loaded.Value;
 
-        var @event = await events.GetByIdAsync(contract.EventId, contract.OwnerId, ct);
-        if (@event is null)
-            return Result.Failure<ContractResponse>(Error.NotFound("event.not_found", "Evento não encontrado."));
+        var linked = await EnsureEventAcceptsAsync(contract.EventId, contract.OwnerId, ct);
+        if (linked.IsFailure) return Result.Failure<ContractResponse>(linked.Error!);
 
         // A parcela devolve o lançamento que criou, e ele sai junto: estornar
         // desfaz previsto e realizado de uma vez.
         var entryId = contract.UnsettleInstallment(number);
-        @event.RemoveContractEntry(entryId, clock.UtcNow);
+
+        var entry = await entries.GetByIdAsync(entryId, contract.OwnerId, ct);
+        entry?.MarkAsDeleted(clock.UtcNow);
 
         await unitOfWork.SaveChangesAsync(ct);
 
@@ -256,6 +255,22 @@ public sealed class ContractService(
     }
 
     private DateOnly Today => DateOnly.FromDateTime(clock.UtcNow.UtcDateTime);
+
+    /// <summary>
+    /// Quando o contrato pertence a um evento, é o evento que diz se ainda
+    /// aceita movimentação. Sem evento, não há o que perguntar.
+    /// </summary>
+    private async Task<Result> EnsureEventAcceptsAsync(Guid? eventId, Guid ownerId, CancellationToken ct)
+    {
+        if (eventId is not { } id) return Result.Success();
+
+        var @event = await events.GetByIdAsync(id, ownerId, ct);
+        if (@event is null)
+            return Result.Failure(Error.NotFound("event.not_found", "Evento não encontrado."));
+
+        @event.EnsureAcceptsChanges();
+        return Result.Success();
+    }
 
     private async Task<Result<Contract>> LoadAsync(Guid contractId, CancellationToken ct)
     {

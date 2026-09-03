@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FinFlower.Application.Auth.Dtos;
 using FinFlower.Application.Contracts.Dtos;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Domain.Enums;
 
@@ -40,19 +41,19 @@ public class SampleDump(ApiFactory factory) : IClassFixture<ApiFactory>
 
             if (primeiro == Guid.Empty) primeiro = @event.Id;
 
-            await client.PostAsJsonAsync($"/api/events/{@event.Id}/entries", new CreateEntryRequest(
-                EntryType.Income, "Venda de ingressos", receita, "Ingressos", data));
-            await client.PostAsJsonAsync($"/api/events/{@event.Id}/entries", new CreateEntryRequest(
-                EntryType.Expense, "Estrutura e equipe", custo, "Estrutura", data));
+            await client.PostAsJsonAsync("/api/entries", new CreateEntryRequest(
+                EntryType.Income, "Venda de ingressos", receita, "Ingressos", data, @event.Id));
+            await client.PostAsJsonAsync("/api/entries", new CreateEntryRequest(
+                EntryType.Expense, "Estrutura e equipe", custo, "Estrutura", data, @event.Id));
 
-            var contract = (await (await client.PostAsJsonAsync($"/api/events/{@event.Id}/contracts",
+            var contract = (await (await client.PostAsJsonAsync("/api/contracts",
                     new CreateContractRequest(ContractDirection.Receivable, contratante, "Patrocínio",
-                        valor, PaymentMethod.Boleto, parcelas, data.AddMonths(-2), data.AddMonths(-3))))
+                        valor, PaymentMethod.Boleto, parcelas, data.AddMonths(-2), data.AddMonths(-3), @event.Id)))
                 .Content.ReadFromJsonAsync<ContractResponse>(TestJson.Options))!;
 
-            await client.PostAsJsonAsync($"/api/events/{@event.Id}/contracts", new CreateContractRequest(
+            await client.PostAsJsonAsync("/api/contracts", new CreateContractRequest(
                 ContractDirection.Payable, "Buffet Silva", "Alimentação",
-                custo, PaymentMethod.Pix, 2, data.AddMonths(-1), data.AddMonths(-2)));
+                custo, PaymentMethod.Pix, 2, data.AddMonths(-1), data.AddMonths(-2), @event.Id));
 
             await client.PostAsJsonAsync($"/api/contracts/{contract.Id}/installments/1/settle",
                 new SettleInstallmentRequest());

@@ -4,16 +4,14 @@ using FinFlower.Domain.Enums;
 namespace FinFlower.Domain.Entities;
 
 /// <summary>
-/// Um evento e seus lançamentos. É a raiz de agregação: toda criação, alteração
-/// e remoção de lançamento passa por aqui, então "evento fechado não muda" vale
-/// sempre, venha a chamada de onde vier.
+/// Um evento: o rótulo que agrupa lançamentos para apurar resultado por trabalho
+/// realizado. Não é mais o dono dos lançamentos — o livro-caixa é — mas continua
+/// dizendo quando para de aceitar movimentação, através de <see cref="EnsureAcceptsChanges"/>.
 /// </summary>
 public sealed class Event : AuditableEntity
 {
     public const int MaxNameLength = 120;
     public const int MaxDescriptionLength = 500;
-
-    private readonly List<Entry> _entries = [];
 
     private Event() { } // EF Core
 
@@ -38,115 +36,37 @@ public sealed class Event : AuditableEntity
     public DateOnly EventDate { get; private set; }
     public EventStatus Status { get; private set; }
 
-    public IReadOnlyCollection<Entry> Entries => _entries.AsReadOnly();
-
-    public decimal TotalIncome => _entries
-        .Where(e => !e.IsDeleted && e.Type == EntryType.Income)
-        .Sum(e => e.Amount);
-
-    public decimal TotalExpense => _entries
-        .Where(e => !e.IsDeleted && e.Type == EntryType.Expense)
-        .Sum(e => e.Amount);
-
-    /// <summary>Entradas menos saídas. Positivo é lucro, negativo é prejuízo.</summary>
-    public decimal Result => TotalIncome - TotalExpense;
-
-    public bool IsProfitable => Result > 0;
+    public bool IsClosed => Status == EventStatus.Closed;
 
     public void UpdateDetails(string name, string? description, DateOnly eventDate)
     {
-        EnsureOpen();
+        EnsureAcceptsChanges();
         Name = Guard.AgainstNullOrWhiteSpace(name, "nome", MaxNameLength);
         Description = NormalizeDescription(description);
         EventDate = eventDate;
     }
 
-    public Entry AddEntry(
-        EntryType type,
-        string description,
-        decimal amount,
-        string category,
-        DateOnly occurredOn,
-        Guid? installmentId = null)
-    {
-        EnsureOpen();
-        var entry = new Entry(Id, type, description, amount, category, occurredOn, installmentId);
-        _entries.Add(entry);
-        return entry;
-    }
-
-    public void UpdateEntry(
-        Guid entryId,
-        EntryType type,
-        string description,
-        decimal amount,
-        string category,
-        DateOnly occurredOn)
-    {
-        EnsureOpen();
-
-        var entry = FindEntry(entryId);
-        if (entry.ComesFromContract)
-        {
-            throw new DomainException(
-                "Este lançamento veio de uma parcela de contrato. Ajuste a parcela para alterá-lo.");
-        }
-
-        entry.Update(type, description, amount, category, occurredOn);
-    }
-
-    public void RemoveEntry(Guid entryId, DateTimeOffset now)
-    {
-        EnsureOpen();
-
-        var entry = FindEntry(entryId);
-        if (entry.ComesFromContract)
-        {
-            throw new DomainException(
-                "Este lançamento veio de uma parcela de contrato. Estorne a parcela para removê-lo.");
-        }
-
-        entry.MarkAsDeleted(now);
-    }
-
     /// <summary>
-    /// Remove o lançamento gerado por uma parcela. Só o estorno da parcela chega
-    /// aqui — a remoção comum recusa lançamentos de contrato.
+    /// A regra do evento fechado, num lugar só. Quem cria, altera ou remove um
+    /// lançamento ligado a um evento pergunta aqui antes — a regra continua sendo
+    /// do domínio, ainda que o lançamento já não viva dentro do agregado.
     /// </summary>
-    public void RemoveContractEntry(Guid entryId, DateTimeOffset now)
+    public void EnsureAcceptsChanges()
     {
-        EnsureOpen();
-        FindEntry(entryId).MarkAsDeleted(now);
+        if (IsClosed)
+            throw new DomainException("Não é possível alterar um evento fechado. Reabra o evento primeiro.");
     }
 
     public void Close()
     {
-        if (Status == EventStatus.Closed)
-            throw new DomainException("Este evento já está fechado.");
-
+        if (IsClosed) throw new DomainException("Este evento já está fechado.");
         Status = EventStatus.Closed;
     }
 
     public void Reopen()
     {
-        if (Status == EventStatus.Open)
-            throw new DomainException("Este evento já está aberto.");
-
+        if (!IsClosed) throw new DomainException("Este evento já está aberto.");
         Status = EventStatus.Open;
-    }
-
-    private Entry FindEntry(Guid entryId)
-    {
-        var entry = _entries.FirstOrDefault(e => e.Id == entryId && !e.IsDeleted)
-            ?? throw new DomainException("Lançamento não encontrado neste evento.");
-
-        return entry;
-    }
-
-    private void EnsureOpen()
-    {
-        if (Status == EventStatus.Closed)
-            throw new DomainException("Não é possível alterar um evento fechado. Reabra o evento primeiro.");
     }
 
     private static string? NormalizeDescription(string? description)

@@ -18,36 +18,6 @@ internal static class EventRules
     public static IRuleBuilderOptions<T, string?> EventDescription<T>(this IRuleBuilder<T, string?> rule) =>
         rule.MaximumLength(Event.MaxDescriptionLength)
             .WithMessage($"A descrição deve ter no máximo {Event.MaxDescriptionLength} caracteres.");
-
-    public static void EntryFields<T>(AbstractValidator<T> validator)
-        where T : IEntryFields
-    {
-        validator.RuleFor(x => x.Type)
-            .IsInEnum().WithMessage("Tipo inválido. Use 'Income' (entrada) ou 'Expense' (saída).");
-
-        validator.RuleFor(x => x.Description)
-            .NotEmpty().WithMessage("Informe a descrição do lançamento.")
-            .MaximumLength(Entry.MaxDescriptionLength)
-            .WithMessage($"A descrição deve ter no máximo {Entry.MaxDescriptionLength} caracteres.");
-
-        validator.RuleFor(x => x.Amount)
-            .GreaterThan(0).WithMessage("O valor deve ser maior que zero.")
-            .LessThanOrEqualTo(999_999_999.99m).WithMessage("O valor informado é alto demais.");
-
-        validator.RuleFor(x => x.Category)
-            .NotEmpty().WithMessage("Informe a categoria.")
-            .MaximumLength(Entry.MaxCategoryLength)
-            .WithMessage($"A categoria deve ter no máximo {Entry.MaxCategoryLength} caracteres.");
-    }
-}
-
-/// <summary>Campos comuns de criação e edição de lançamento.</summary>
-public interface IEntryFields
-{
-    Domain.Enums.EntryType Type { get; }
-    string Description { get; }
-    decimal Amount { get; }
-    string Category { get; }
 }
 
 public sealed class CreateEventRequestValidator : AbstractValidator<CreateEventRequest>
@@ -66,14 +36,4 @@ public sealed class UpdateEventRequestValidator : AbstractValidator<UpdateEventR
         RuleFor(x => x.Name).EventName();
         RuleFor(x => x.Description).EventDescription();
     }
-}
-
-public sealed class CreateEntryRequestValidator : AbstractValidator<CreateEntryRequest>
-{
-    public CreateEntryRequestValidator() => EventRules.EntryFields(this);
-}
-
-public sealed class UpdateEntryRequestValidator : AbstractValidator<UpdateEntryRequest>
-{
-    public UpdateEntryRequestValidator() => EventRules.EntryFields(this);
 }

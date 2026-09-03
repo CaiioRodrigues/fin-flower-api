@@ -14,6 +14,7 @@ public interface IReportExportService
     Task<Result<ReportFile>> ExportInstallmentsAsync(ReportFormat format, CancellationToken ct = default);
     Task<Result<ReportFile>> ExportCashAsync(ReportFormat format, DateOnly? from, DateOnly? to, CancellationToken ct = default);
     Task<Result<ReportFile>> ExportEventStatementAsync(Guid eventId, ReportFormat format, CancellationToken ct = default);
+    Task<Result<ReportFile>> ExportMonthlyCashAsync(ReportFormat format, string? from, string? to, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -25,6 +26,7 @@ public sealed class ReportExportService(
     IContractQueries contracts,
     ICashReportService cashReport,
     ICashFlowReportService cashFlow,
+    Cash.IMonthlyCashService monthlyCash,
     ICurrentUser currentUser,
     IDateTimeProvider clock,
     IEnumerable<IReportWriter> writers) : IReportExportService
@@ -119,6 +121,18 @@ public sealed class ReportExportService(
         }
 
         return Write(format, BuildStatement(@event, details));
+    }
+
+    public async Task<Result<ReportFile>> ExportMonthlyCashAsync(
+        ReportFormat format,
+        string? from,
+        string? to,
+        CancellationToken ct = default)
+    {
+        var report = await monthlyCash.GetAsync(from, to, ct);
+        if (report.IsFailure) return Result.Failure<ReportFile>(report.Error!);
+
+        return Write(format, BuildMonthlyCash(report.Value));
     }
 
     private Result<ReportFile> Write(ReportFormat format, ReportDocument document)
@@ -246,6 +260,99 @@ public sealed class ReportExportService(
                         new ReportColumn("Resultado", ReportColumnType.Money),
                     ],
                     rows),
+            ]);
+    }
+
+    /// <summary>
+    /// O caixa mês a mês. A coluna de saldo acumulado é a razão de ser deste
+    /// relatório: cada linha abre com o fechamento da anterior, então a planilha
+    /// lida de cima a baixo conta a história do dinheiro sem nenhuma fórmula.
+    /// </summary>
+    private ReportDocument BuildMonthlyCash(Cash.Dtos.MonthlyCashResponse report)
+    {
+        var months = report.Months
+            .Select(m => Row(false,
+                m.Label,
+                m.OpeningBalance,
+                m.Income,
+                m.Expense,
+                m.Result,
+                m.ClosingBalance,
+                m.FixedExpense,
+                m.ProLabore,
+                m.EntryCount))
+            .ToList();
+
+        months.Add(Row(true,
+            "Total do período",
+            report.OpeningBalance,
+            report.TotalIncome,
+            report.TotalExpense,
+            report.Result,
+            report.ClosingBalance,
+            report.TotalFixedExpense,
+            report.TotalProLabore,
+            report.Months.Sum(m => m.EntryCount)));
+
+        // As categorias de todos os meses somadas: é a pergunta seguinte de quem
+        // olha o resultado — "onde foi parar o dinheiro".
+        var expenseByCategory = report.Months
+            .SelectMany(m => m.ExpenseByCategory)
+            .GroupBy(c => c.Category)
+            .Select(g => Row(false, g.Key, g.Sum(c => c.Amount), g.Sum(c => c.Count)))
+            .OrderByDescending(r => (decimal)r.Cells[1]!)
+            .ToList();
+
+        var incomeByCategory = report.Months
+            .SelectMany(m => m.IncomeByCategory)
+            .GroupBy(c => c.Category)
+            .Select(g => Row(false, g.Key, g.Sum(c => c.Amount), g.Sum(c => c.Count)))
+            .OrderByDescending(r => (decimal)r.Cells[1]!)
+            .ToList();
+
+        return new ReportDocument(
+            "caixa-mensal",
+            "Caixa mês a mês",
+            $"De {report.From} a {report.To}",
+            clock.UtcNow,
+            [
+                new ReportMetric("Saldo inicial", Money(report.OpeningBalance)),
+                new ReportMetric("Entradas", Money(report.TotalIncome)),
+                new ReportMetric("Saídas", Money(report.TotalExpense)),
+                new ReportMetric("Resultado", Money(report.Result)),
+                new ReportMetric("Saldo final", Money(report.ClosingBalance)),
+                new ReportMetric("Média mensal", Money(report.AverageMonthlyResult)),
+                new ReportMetric("Custos fixos", Money(report.TotalFixedExpense)),
+                new ReportMetric("Pró-labore", Money(report.TotalProLabore)),
+            ],
+            [
+                new ReportTable("Mês a mês",
+                    [
+                        new ReportColumn("Mês"),
+                        new ReportColumn("Saldo inicial", ReportColumnType.Money),
+                        new ReportColumn("Entradas", ReportColumnType.Money),
+                        new ReportColumn("Saídas", ReportColumnType.Money),
+                        new ReportColumn("Resultado", ReportColumnType.Money),
+                        new ReportColumn("Saldo final", ReportColumnType.Money),
+                        new ReportColumn("Custos fixos", ReportColumnType.Money),
+                        new ReportColumn("Pró-labore", ReportColumnType.Money),
+                        new ReportColumn("Lançamentos", ReportColumnType.Count),
+                    ],
+                    months),
+                new ReportTable("Saídas por categoria",
+                    [
+                        new ReportColumn("Categoria"),
+                        new ReportColumn("Total", ReportColumnType.Money),
+                        new ReportColumn("Lançamentos", ReportColumnType.Count),
+                    ],
+                    expenseByCategory),
+                new ReportTable("Entradas por categoria",
+                    [
+                        new ReportColumn("Categoria"),
+                        new ReportColumn("Total", ReportColumnType.Money),
+                        new ReportColumn("Lançamentos", ReportColumnType.Count),
+                    ],
+                    incomeByCategory),
             ]);
     }
 

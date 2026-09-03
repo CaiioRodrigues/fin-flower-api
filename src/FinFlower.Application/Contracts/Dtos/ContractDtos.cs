@@ -10,14 +10,17 @@ public sealed record CreateContractRequest(
     PaymentMethod PaymentMethod,
     int InstallmentCount,
     DateOnly FirstDueDate,
-    DateOnly SignedOn);
+    DateOnly SignedOn,
+    // Opcional: há contrato que não pertence a evento nenhum.
+    Guid? EventId = null);
 
 public sealed record UpdateContractRequest(
     ContractDirection Direction,
     string Counterparty,
     string? Description,
     PaymentMethod PaymentMethod,
-    DateOnly SignedOn);
+    DateOnly SignedOn,
+    Guid? EventId = null);
 
 /// <summary>
 /// Liquidação da parcela. Os campos opcionais existem porque o pagamento real
@@ -48,7 +51,10 @@ public sealed record AttachmentResponse(string FileName, int SizeInBytes, DateTi
 
 public sealed record ContractResponse(
     Guid Id,
-    Guid EventId,
+    Guid? EventId,
+    string? EventName,
+    Guid? QuoteId,
+    string? QuoteNumber,
     ContractDirection Direction,
     string Counterparty,
     string? Description,
@@ -64,8 +70,8 @@ public sealed record ContractResponse(
 
 public sealed record ContractSummaryResponse(
     Guid Id,
-    Guid EventId,
-    string EventName,
+    Guid? EventId,
+    string? EventName,
     ContractDirection Direction,
     string Counterparty,
     decimal TotalAmount,

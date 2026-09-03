@@ -23,15 +23,6 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
             .HasForeignKey(e => e.OwnerId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasMany(e => e.Entries)
-            .WithOne()
-            .HasForeignKey(e => e.EventId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        builder.Navigation(e => e.Entries)
-            .UsePropertyAccessMode(PropertyAccessMode.Field)
-            .HasField("_entries");
-
         builder.HasQueryFilter(e => !e.IsDeleted);
     }
 }

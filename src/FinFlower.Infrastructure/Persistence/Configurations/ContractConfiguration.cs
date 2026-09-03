@@ -20,9 +20,21 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         // Listagem e relatórios são sempre "do dono, por evento".
         builder.HasIndex(c => new { c.OwnerId, c.EventId });
 
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(c => c.OwnerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // O evento é opcional: existe contrato de fornecedor e de aluguel que
+        // não pertence a trabalho nenhum.
         builder.HasOne<Event>()
             .WithMany()
             .HasForeignKey(c => c.EventId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<Quote>()
+            .WithMany()
+            .HasForeignKey(c => c.QuoteId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasMany(c => c.Installments)

@@ -1,4 +1,5 @@
 using FinFlower.Application.Common;
+using FinFlower.Application.Entries.Dtos;
 using FinFlower.Application.Events.Dtos;
 using FinFlower.Domain.Enums;
 using FluentAssertions;
@@ -16,15 +17,15 @@ public class EventOwnershipTests
 
     private static CreateEventRequest NewEvent() => new("Festa da Alice", null, EventDate);
 
-    private static CreateEntryRequest Income(decimal amount = 100m) =>
-        new(EntryType.Income, "Ingressos", amount, "Vendas", EventDate);
+    private static CreateEntryRequest Income(Guid eventId, decimal amount = 100m) =>
+        new(EntryType.Income, "Ingressos", amount, "Vendas", EventDate, eventId);
 
     /// <summary>Cria um evento com um lançamento para o usuário A e passa a agir como B.</summary>
     private static async Task<(Guid EventId, Guid EntryId)> ArrangeForeignEventAsync(EventTestContext ctx)
     {
         ctx.ActAs();
         var @event = (await ctx.Events.CreateAsync(NewEvent())).Value;
-        var entry = (await ctx.Events.AddEntryAsync(@event.Id, Income())).Value;
+        var entry = (await ctx.Entries.CreateAsync(Income(@event.Id))).Value;
 
         ctx.ActAs();
         return (@event.Id, entry.Id);
@@ -62,12 +63,11 @@ public class EventOwnershipTests
         var update = await ctx.Events.UpdateAsync(eventId, new UpdateEventRequest("Sequestrado", null, EventDate));
         var delete = await ctx.Events.DeleteAsync(eventId);
         var close = await ctx.Events.CloseAsync(eventId);
-        var addEntry = await ctx.Events.AddEntryAsync(eventId, Income());
-        var updateEntry = await ctx.Events.UpdateEntryAsync(
-            eventId,
+        var addEntry = await ctx.Entries.CreateAsync(Income(eventId));
+        var updateEntry = await ctx.Entries.UpdateAsync(
             entryId,
-            new UpdateEntryRequest(EntryType.Expense, "Sequestrado", 1m, "Outros", EventDate));
-        var removeEntry = await ctx.Events.RemoveEntryAsync(eventId, entryId);
+            new UpdateEntryRequest(EntryType.Expense, "Sequestrado", 1m, "Outros", EventDate, eventId));
+        var removeEntry = await ctx.Entries.DeleteAsync(entryId);
 
         new[] { update.Error, delete.Error, close.Error, addEntry.Error, updateEntry.Error, removeEntry.Error }
             .Should().AllSatisfy(error => error!.Type.Should().Be(ErrorType.NotFound));
@@ -80,7 +80,7 @@ public class EventOwnershipTests
         ctx.ActAs();
         var owner = ctx.CurrentUser.UserId!.Value;
         var @event = (await ctx.Events.CreateAsync(NewEvent())).Value;
-        await ctx.Events.AddEntryAsync(@event.Id, Income(500m));
+        await ctx.Entries.CreateAsync(Income(@event.Id, 500m));
 
         ctx.ActAs();
         await ctx.Events.UpdateAsync(@event.Id, new UpdateEventRequest("Sequestrado", null, EventDate));

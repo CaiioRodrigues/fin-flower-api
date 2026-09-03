@@ -20,6 +20,9 @@ public static class ReportEndpoints
         reports.MapGet("/cash-flow", GetCashFlow)
             .WithSummary("Fluxo de caixa: vencidos, o mês corrente e a previsão dos próximos.");
 
+        reports.MapGet("/monthly/export", ExportMonthlyCash)
+            .WithSummary("Baixa o caixa mês a mês, com saldo acumulado, em xlsx ou pdf.");
+
         reports.MapGet("/cash/export", ExportCash)
             .WithSummary("Baixa o caixa por evento em xlsx ou pdf.");
 
@@ -36,6 +39,14 @@ public static class ReportEndpoints
 
         return app;
     }
+
+    private static async Task<IResult> ExportMonthlyCash(
+        IReportExportService service,
+        CancellationToken cancellationToken,
+        [FromQuery] string format = "xlsx",
+        [FromQuery] string? from = null,
+        [FromQuery] string? to = null) =>
+        await Export(format, chosen => service.ExportMonthlyCashAsync(chosen, from, to, cancellationToken));
 
     private static async Task<IResult> ExportCash(
         IReportExportService service,

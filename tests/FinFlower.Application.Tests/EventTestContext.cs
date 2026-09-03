@@ -1,5 +1,9 @@
+using FinFlower.Application.Cash;
 using FinFlower.Application.Contracts;
+using FinFlower.Application.Entries;
 using FinFlower.Application.Events;
+using FinFlower.Application.Quotes;
+using FinFlower.Application.Recurring;
 using FinFlower.Application.Reports;
 using FinFlower.Infrastructure.Persistence;
 using FinFlower.Infrastructure.Persistence.Queries;
@@ -27,10 +31,31 @@ public sealed class EventTestContext : IDisposable
         Context = new AppDbContext(options, Clock);
 
         var queries = new EventQueries(Context);
+        var entryRepository = new EntryRepository(Context);
+        var entryQueries = new EntryQueries(Context);
+        var eventRepository = new EventRepository(Context);
 
         Events = new EventService(
-            new EventRepository(Context),
+            eventRepository,
             queries,
+            entryRepository,
+            CurrentUser,
+            Clock,
+            Context);
+
+        Entries = new EntryService(
+            entryRepository,
+            entryQueries,
+            eventRepository,
+            CurrentUser,
+            Clock,
+            Context);
+
+        MonthlyCash = new MonthlyCashService(entryQueries, CurrentUser, Clock);
+
+        RecurringItems = new RecurringItemService(
+            new RecurringItemRepository(Context),
+            entryRepository,
             CurrentUser,
             Clock,
             Context);
@@ -38,11 +63,20 @@ public sealed class EventTestContext : IDisposable
         CashReport = new CashReportService(queries, CurrentUser);
 
         var contractQueries = new ContractQueries(Context);
-        var eventRepository = new EventRepository(Context);
 
         Contracts = new ContractService(
             new ContractRepository(Context),
             contractQueries,
+            eventRepository,
+            entryRepository,
+            CurrentUser,
+            Clock,
+            Context);
+
+        Quotes = new QuoteService(
+            new QuoteRepository(Context),
+            new QuoteQueries(Context),
+            new ContractRepository(Context),
             eventRepository,
             CurrentUser,
             Clock,
@@ -55,6 +89,10 @@ public sealed class EventTestContext : IDisposable
     public FakeCurrentUser CurrentUser { get; }
     public AppDbContext Context { get; }
     public IEventService Events { get; }
+    public IEntryService Entries { get; }
+    public IMonthlyCashService MonthlyCash { get; }
+    public IRecurringItemService RecurringItems { get; }
+    public IQuoteService Quotes { get; }
     public ICashReportService CashReport { get; }
     public IContractService Contracts { get; }
     public ICashFlowReportService CashFlow { get; }
