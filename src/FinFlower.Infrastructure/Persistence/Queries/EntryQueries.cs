@@ -130,6 +130,27 @@ public sealed class EntryQueries(AppDbContext context) : IEntryQueries
             .SumAsync(e => (decimal?)(e.Type == EntryType.Income ? e.Amount : -e.Amount), cancellationToken) ?? 0m;
     }
 
+    public async Task<IReadOnlySet<(Guid RecurringItemId, DateOnly Month)>> GetGeneratedRecurringMonthsAsync(
+        Guid ownerId,
+        YearMonth from,
+        YearMonth to,
+        CancellationToken cancellationToken = default)
+    {
+        var start = from.FirstDay;
+        var end = to.FirstDay;
+
+        var rows = await context.Entries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.RecurringItemId != null
+                        && e.RecurringMonth >= start
+                        && e.RecurringMonth <= end)
+            .Select(e => new { Id = e.RecurringItemId!.Value, Month = e.RecurringMonth!.Value })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(r => (r.Id, r.Month)).ToHashSet();
+    }
+
     public async Task<IReadOnlyList<string>> ListCategoriesAsync(
         Guid ownerId,
         CancellationToken cancellationToken = default) =>
