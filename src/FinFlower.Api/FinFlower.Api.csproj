@@ -1,5 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!--
+      Sem esta propriedade o cofre de segredos não existe: 'dotnet user-secrets'
+      recusa o comando e o .NET não carrega segredo nenhum na subida. O Visual
+      Studio a acrescenta sozinho quando alguém usa "Gerenciar Segredos do
+      Usuário", mas aí ela fica só na máquina de quem clicou — e some no clone
+      seguinte, levando a chave do JWT junto.
+    -->
+    <UserSecretsId>fin-flower-api-2b7c41d8-9e05-4a3f-bd16-6c0f8ad51e92</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\FinFlower.Infrastructure\FinFlower.Infrastructure.csproj" />
     <ProjectReference Include="..\FinFlower.Application\FinFlower.Application.csproj" />
