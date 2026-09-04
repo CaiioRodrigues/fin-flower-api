@@ -66,7 +66,33 @@ public sealed record MonthlyCashResponse(
 
     int BestMonthIndex,
     int WorstMonthIndex,
+
+    // O saldo inicial declarado pelo dono, quando existe. Sem ele o "saldo em
+    // caixa" é só a soma do que foi digitado, e quem começou a usar o sistema no
+    // meio do ano lê variação achando que lê saldo.
+    CashOpeningResponse? Opening,
+
     IReadOnlyList<MonthlyCashMonth> Months);
+
+/// <summary>
+/// O dinheiro que já existia quando o sistema começou a ser usado.
+/// <c>IgnoredEntries</c> conta os lançamentos anteriores à data: eles ficam de
+/// fora do saldo porque este valor já os contém, e a tela precisa dizer isso.
+/// </summary>
+public sealed record CashOpeningResponse(
+    decimal Amount,
+    DateOnly OccurredOn,
+    string? Notes,
+    int IgnoredEntries);
+
+/// <summary>
+/// O saldo declarado. <c>Amount</c> aceita negativo: começar devendo é uma
+/// situação real, e recusá-la obrigaria a mentir para o próprio caixa.
+/// </summary>
+public sealed record SaveCashOpeningRequest(
+    decimal Amount,
+    DateOnly OccurredOn,
+    string? Notes);
 
 /// <summary>
 /// Parcelas em aberto agrupadas por mês de vencimento e sentido. É o previsto
