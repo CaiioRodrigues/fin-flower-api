@@ -37,6 +37,9 @@ public static class QuoteEndpoints
         quotes.MapPost("/{quoteId:guid}/approve", Approve)
             .WithSummary("Aprova e gera o contrato com as parcelas.");
 
+        quotes.MapGet("/{quoteId:guid}/proposal", Proposal)
+            .WithSummary("Baixa a proposta comercial em PDF, pronta para enviar ao cliente.");
+
         return app;
     }
 
@@ -142,6 +145,17 @@ public static class QuoteEndpoints
         IQuoteService service,
         CancellationToken cancellationToken) =>
         (await service.ReopenAsync(quoteId, cancellationToken)).ToHttpResult();
+
+    private static async Task<IResult> Proposal(
+        Guid quoteId,
+        IQuoteService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExportProposalAsync(quoteId, cancellationToken);
+
+        return result.ToHttpResult(file =>
+            Results.File(file.Content, file.ContentType, file.FileName));
+    }
 
     private static async Task<IResult> Approve(
         Guid quoteId,

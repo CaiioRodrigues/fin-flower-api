@@ -8,6 +8,7 @@ using FinFlower.Application.Reports;
 using FinFlower.Infrastructure.Persistence;
 using FinFlower.Infrastructure.Persistence.Queries;
 using FinFlower.Infrastructure.Persistence.Repositories;
+using FinFlower.Infrastructure.Reports;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinFlower.Application.Tests;
@@ -84,6 +85,8 @@ public sealed class EventTestContext : IDisposable
             new QuoteQueries(Context),
             new ContractRepository(Context),
             eventRepository,
+            new UserRepository(Context),
+            new QuoteProposalWriter(),
             CurrentUser,
             Clock,
             Context);
