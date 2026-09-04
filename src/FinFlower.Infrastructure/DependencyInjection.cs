@@ -45,9 +45,10 @@ public static class DependencyInjection
 
         // Valida as opções na subida do processo: chave JWT ausente ou curta
         // derruba a aplicação no start, não na primeira tentativa de login.
+        services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<JwtOptions>, ValidateJwtOptions>();
+
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
-            .ValidateDataAnnotations()
             .ValidateOnStart();
 
         // QuestPDF exige declarar a licença antes do primeiro uso. A Community é

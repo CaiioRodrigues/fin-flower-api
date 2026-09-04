@@ -218,7 +218,7 @@ e o middleware devolve 400. Assim o domínio não precisa confiar em quem o cham
 | Vazamento por erro | 500 genérico ao cliente; detalhe e stack trace só no log |
 | Cabeçalhos | CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cache-Control: no-store` |
 | CORS | Lista explícita de origens, nunca `AllowAnyOrigin` |
-| Segredos | `user-secrets` em dev, variável de ambiente em produção; validados na subida |
+| Segredos | `user-secrets` em dev, variável de ambiente em produção; validados na subida, com mensagem que diz como configurar |
 | Auditoria | `CreatedAt`/`UpdatedAt` automáticos e exclusão lógica em tudo |
 | Upload de arquivo | Assinatura `%PDF` conferida no conteúdo, não na extensão nem no content-type que o cliente declara |
 | Download de arquivo | Servido sempre como `application/pdf`: deixar o navegador interpretar um arquivo do usuário como HTML seria um XSS |
@@ -233,8 +233,11 @@ Studio — não precisa de container nem de senha de `sa`. A connection string e
 
 **1. Defina a chave do JWT**
 
-Ela não vai para o repositório. No Visual Studio: clique com o botão direito no
-projeto `FinFlower.Api` → **Gerenciar Segredos do Usuário**, e cole:
+Ela não vai para o repositório — segredo não se versiona. **Cada clone precisa
+definir a sua**, inclusive o seu segundo clone na mesma máquina.
+
+No Visual Studio: clique com o botão direito no projeto `FinFlower.Api` →
+**Gerenciar Segredos do Usuário**, e cole:
 
 ```json
 {
@@ -244,7 +247,13 @@ projeto `FinFlower.Api` → **Gerenciar Segredos do Usuário**, e cole:
 }
 ```
 
-Sem isso a aplicação nem sobe: a chave é validada na inicialização.
+Sem isso a aplicação nem sobe, e a mensagem de erro repete estas instruções.
+
+> O `UserSecretsId` fica versionado no `.csproj` de propósito. Ele não é
+> segredo — é só o endereço do cofre. Sem ele, `dotnet user-secrets` recusa o
+> comando e o .NET não carrega nada, mesmo com o arquivo de segredos no lugar.
+> O Visual Studio acrescenta a propriedade sozinho quando alguém usa o menu de
+> segredos, mas aí ela existe só naquela máquina e some no clone seguinte.
 
 **2. Rode (F5)**
 
