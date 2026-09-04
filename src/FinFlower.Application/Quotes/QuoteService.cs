@@ -23,6 +23,9 @@ public interface IQuoteService
     Task<Result<QuoteResponse>> RejectAsync(Guid quoteId, CancellationToken ct = default);
     Task<Result<QuoteResponse>> ReopenAsync(Guid quoteId, CancellationToken ct = default);
     Task<Result<QuoteResponse>> ApproveAsync(Guid quoteId, ApproveQuoteRequest request, CancellationToken ct = default);
+
+    /// <summary>A proposta impressa, pronta para enviar ao cliente.</summary>
+    Task<Result<Reports.Export.ReportFile>> ExportProposalAsync(Guid quoteId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -36,6 +39,8 @@ public sealed class QuoteService(
     IQuoteQueries queries,
     IContractRepository contracts,
     IEventRepository events,
+    IUserRepository users,
+    IQuoteProposalWriter proposals,
     ICurrentUser currentUser,
     IDateTimeProvider clock,
     IUnitOfWork unitOfWork) : IQuoteService
@@ -218,6 +223,42 @@ public sealed class QuoteService(
         await unitOfWork.SaveChangesAsync(ct);
 
         return await ReadAsync(quoteId, quote.OwnerId, ct);
+    }
+
+    public async Task<Result<Reports.Export.ReportFile>> ExportProposalAsync(
+        Guid quoteId,
+        CancellationToken ct = default)
+    {
+        if (currentUser.UserId is not { } ownerId)
+            return Result.Failure<Reports.Export.ReportFile>(NoSession);
+
+        var quote = await queries.GetAsync(quoteId, ownerId, Today, ct);
+        if (quote is null) return Result.Failure<Reports.Export.ReportFile>(QuoteNotFound());
+
+        // O emissor da proposta é quem está logado: é o nome que o cliente vê
+        // no papel timbrado. Sem ele o documento sairia anônimo.
+        var issuer = await users.GetByIdAsync(ownerId, ct);
+        if (issuer is null)
+            return Result.Failure<Reports.Export.ReportFile>(NoSession);
+
+        var proposal = new QuoteProposal(
+            quote.Number,
+            issuer.Name,
+            issuer.Email,
+            quote.ClientName,
+            quote.Title,
+            quote.IssuedOn,
+            quote.ValidUntil,
+            quote.IsExpired,
+            quote.Notes,
+            quote.EventName,
+            quote.Subtotal,
+            quote.DiscountAmount,
+            quote.Total,
+            quote.Items,
+            clock.UtcNow);
+
+        return Result.Success(proposals.Write(proposal));
     }
 
     private DateOnly Today => DateOnly.FromDateTime(clock.UtcNow.UtcDateTime);

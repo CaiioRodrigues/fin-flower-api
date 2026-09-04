@@ -56,6 +56,7 @@ public static class DependencyInjection
         // acima disso, é preciso adquirir a versão paga.
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
+        services.AddSingleton<IQuoteProposalWriter, QuoteProposalWriter>();
         services.AddSingleton<IReportWriter, ExcelReportWriter>();
         services.AddSingleton<IReportWriter, PdfReportWriter>();
 
