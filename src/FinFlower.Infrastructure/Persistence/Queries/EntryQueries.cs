@@ -75,9 +75,11 @@ public sealed class EntryQueries(AppDbContext context) : IEntryQueries
         Guid ownerId,
         YearMonth from,
         YearMonth to,
+        DateOnly? since = null,
         CancellationToken cancellationToken = default)
     {
-        var start = from.FirstDay;
+        // O saldo inicial recorta o começo da série: nada anterior a ele soma.
+        var start = since is { } cutoff && cutoff > from.FirstDay ? cutoff : from.FirstDay;
         var end = to.LastDay;
 
         // A junção à esquerda com o item fixo é o que permite responder "quanto
@@ -120,15 +122,25 @@ public sealed class EntryQueries(AppDbContext context) : IEntryQueries
     public async Task<decimal> GetBalanceBeforeAsync(
         Guid ownerId,
         YearMonth competence,
+        DateOnly? since = null,
         CancellationToken cancellationToken = default)
     {
         var start = competence.FirstDay;
+        var floor = since ?? DateOnly.MinValue;
 
         return await context.Entries
             .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.OccurredOn < start)
+            .Where(e => e.OwnerId == ownerId && e.OccurredOn < start && e.OccurredOn >= floor)
             .SumAsync(e => (decimal?)(e.Type == EntryType.Income ? e.Amount : -e.Amount), cancellationToken) ?? 0m;
     }
+
+    public Task<int> CountBeforeAsync(
+        Guid ownerId,
+        DateOnly date,
+        CancellationToken cancellationToken = default) =>
+        context.Entries
+            .AsNoTracking()
+            .CountAsync(e => e.OwnerId == ownerId && e.OccurredOn < date, cancellationToken);
 
     public async Task<IReadOnlySet<(Guid RecurringItemId, DateOnly Month)>> GetGeneratedRecurringMonthsAsync(
         Guid ownerId,

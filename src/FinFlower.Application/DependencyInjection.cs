@@ -20,6 +20,7 @@ public static class DependencyInjection
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IEntryService, EntryService>();
         services.AddScoped<IMonthlyCashService, MonthlyCashService>();
+        services.AddScoped<ICashOpeningService, CashOpeningService>();
         services.AddScoped<IRecurringItemService, RecurringItemService>();
         services.AddScoped<IQuoteService, QuoteService>();
         services.AddScoped<ICashReportService, CashReportService>();

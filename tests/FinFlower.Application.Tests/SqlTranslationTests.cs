@@ -74,7 +74,11 @@ public class SqlTranslationTests
             // A mais arriscada do sistema: agrupamento com junção à esquerda no
             // item fixo, para separar pró-labore de gasto fixo dentro do mês.
             () => queries.GetMonthlyBucketsAsync(ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12)),
+            () => queries.GetMonthlyBucketsAsync(
+                ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12), new DateOnly(2026, 3, 15)),
             () => queries.GetBalanceBeforeAsync(ownerId, new YearMonth(2026, 1)),
+            () => queries.GetBalanceBeforeAsync(ownerId, new YearMonth(2026, 6), new DateOnly(2026, 3, 15)),
+            () => queries.CountBeforeAsync(ownerId, new DateOnly(2026, 3, 15)),
             () => queries.GetGeneratedRecurringMonthsAsync(ownerId, new YearMonth(2026, 1), new YearMonth(2026, 12)),
             () => queries.ListCategoriesAsync(ownerId),
         };

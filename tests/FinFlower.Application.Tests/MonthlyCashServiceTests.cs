@@ -352,4 +352,20 @@ public class MonthlyCashServiceTests
         cash.Months.Should().AllSatisfy(m => m.ExpectedIncome.Should().Be(0m));
         cash.ProjectedBalance.Should().Be(0m);
     }
+
+    [Fact]
+    public async Task A_single_month_of_movement_is_neither_the_best_nor_the_worst()
+    {
+        using var ctx = new EventTestContext();
+        ctx.ActAs();
+
+        await Add(ctx, EntryType.Income, 1_000m, new DateOnly(2026, 8, 10));
+
+        var cash = (await ctx.MonthlyCash.GetAsync("2026-07", "2026-09")).Value;
+
+        // Marcar o mesmo mês como melhor e pior ao mesmo tempo é o que acontecia
+        // antes: um superlativo sem nada com que comparar não diz nada.
+        cash.BestMonthIndex.Should().Be(-1);
+        cash.WorstMonthIndex.Should().Be(-1);
+    }
 }

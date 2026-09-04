@@ -54,13 +54,21 @@ public sealed class EventTestContext : IDisposable
 
         var contractQueries = new ContractQueries(Context);
         var recurringRepository = new RecurringItemRepository(Context);
+        var openingRepository = new CashOpeningRepository(Context);
 
         MonthlyCash = new MonthlyCashService(
             entryQueries,
             contractQueries,
             recurringRepository,
+            openingRepository,
             CurrentUser,
             Clock);
+
+        CashOpening = new CashOpeningService(
+            openingRepository,
+            entryQueries,
+            CurrentUser,
+            Context);
 
         RecurringItems = new RecurringItemService(
             recurringRepository,
@@ -100,6 +108,7 @@ public sealed class EventTestContext : IDisposable
     public IEventService Events { get; }
     public IEntryService Entries { get; }
     public IMonthlyCashService MonthlyCash { get; }
+    public ICashOpeningService CashOpening { get; }
     public IRecurringItemService RecurringItems { get; }
     public IQuoteService Quotes { get; }
     public ICashReportService CashReport { get; }

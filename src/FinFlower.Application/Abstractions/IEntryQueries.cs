@@ -19,11 +19,16 @@ public interface IEntryQueries
 
     Task<LedgerEntryResponse?> GetAsync(Guid entryId, Guid ownerId, CancellationToken cancellationToken = default);
 
-    /// <summary>Os totais por mês, sentido, categoria e origem do intervalo pedido.</summary>
+    /// <summary>
+    /// Os totais por mês, sentido, categoria e origem do intervalo pedido.
+    /// <paramref name="since"/> é a data do saldo inicial, quando existe: o que
+    /// vem antes dela já está contido nele e ficaria contado duas vezes.
+    /// </summary>
     Task<IReadOnlyList<MonthlyBucket>> GetMonthlyBucketsAsync(
         Guid ownerId,
         YearMonth from,
         YearMonth to,
+        DateOnly? since = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -33,7 +38,15 @@ public interface IEntryQueries
     Task<decimal> GetBalanceBeforeAsync(
         Guid ownerId,
         YearMonth competence,
+        DateOnly? since = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Quantos lançamentos são anteriores à data do saldo inicial. Não entram na
+    /// conta — mas o número precisa aparecer na tela: um lançamento que some do
+    /// saldo sem explicação parece defeito, e com a explicação é regra.
+    /// </summary>
+    Task<int> CountBeforeAsync(Guid ownerId, DateOnly date, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// As competências de itens fixos já lançadas no intervalo. É o que permite

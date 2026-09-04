@@ -123,6 +123,25 @@ O total de cada linha é arredondado **antes** da soma, porque o cliente confere
 linha a linha: `3 × R$ 33,33 = R$ 99,99`. Guardar `33,333` e arredondar no fim
 daria R$ 100,00 numa linha que mostra R$ 33,33, e o centavo ficaria inexplicável.
 
+### O saldo começa onde o dinheiro já estava
+
+Sem um marco, o "saldo em caixa" é a soma do que foi digitado: quem começa a usar
+o sistema em setembro lê **variação desde setembro** achando que lê saldo — e a
+projeção erra pelo mesmo valor, que é justamente o número usado para decidir se
+dá para pagar as contas.
+
+`PUT /api/cash/opening` declara quanto havia em caixa numa data. Aceita valor
+**negativo**: começar no vermelho é uma situação real, e recusá-la obrigaria a
+mentir para o próprio caixa.
+
+A data é um corte, não um detalhe. Lançamento anterior a ela **não entra no
+saldo**, porque o valor declarado já o contém — somar os dois contaria o mesmo
+dinheiro duas vezes. Como um lançamento que some da conta sem explicação parece
+defeito, a resposta traz `ignoredEntries`, e a tela diz quantos são e por quê.
+
+Um saldo inicial por dono, garantido por índice único no banco: dois deles se
+somariam em silêncio, e o saldo passaria a mentir sem nenhum sintoma.
+
 ### Realizado e previsto na mesma linha do tempo
 
 `/api/cash/monthly` devolve uma série só: meses passados pelo que de fato se
@@ -375,6 +394,9 @@ Add-Migration NomeDaMigration -Project src\FinFlower.Infrastructure -StartupProj
 | `GET` `PUT` `DELETE` | `/api/entries/{id}` | Bearer | Abre, altera e remove um lançamento |
 | `GET` | `/api/entries/categories` | Bearer | Categorias já usadas, para sugerir no formulário |
 | `GET` | `/api/cash/monthly` | Bearer | Caixa mês a mês, com saldo acumulado |
+| `GET` | `/api/cash/opening` | Bearer | Saldo inicial declarado — 204 quando não há |
+| `PUT` | `/api/cash/opening` | Bearer | Declara quanto havia em caixa numa data |
+| `DELETE` | `/api/cash/opening` | Bearer | Remove o marco: o saldo volta a somar tudo |
 | `GET` | `/api/recurring-items` | Bearer | Gastos fixos e pró-labore, com a situação da competência |
 | `POST` | `/api/recurring-items` | Bearer | Cadastra um item fixo |
 | `PUT` `DELETE` | `/api/recurring-items/{id}` | Bearer | Altera e exclui |

@@ -27,6 +27,7 @@ public sealed class MonthlyCashService(
     IEntryQueries queries,
     IContractQueries contracts,
     IRecurringItemRepository recurringItems,
+    ICashOpeningRepository openings,
     ICurrentUser currentUser,
     IDateTimeProvider clock) : IMonthlyCashService
 {
@@ -62,8 +63,23 @@ public sealed class MonthlyCashService(
         var today = Today;
         var current = YearMonth.From(today);
 
-        var opening = await queries.GetBalanceBeforeAsync(ownerId, start, ct);
-        var buckets = await queries.GetMonthlyBucketsAsync(ownerId, start, end, ct);
+        // O saldo declarado pelo dono é o piso de tudo: define de quando a
+        // história registrada vale e entra no acumulado no mês a que se refere.
+        var declared = await openings.GetAsync(ownerId, ct);
+        var since = declared?.OccurredOn;
+
+        var opening = await queries.GetBalanceBeforeAsync(ownerId, start, since, ct);
+        if (declared is { } d && d.OccurredOn < start.FirstDay) opening += d.Amount;
+
+        var buckets = await queries.GetMonthlyBucketsAsync(ownerId, start, end, since, ct);
+
+        var openingResponse = declared is null
+            ? null
+            : new CashOpeningResponse(
+                declared.Amount,
+                declared.OccurredOn,
+                declared.Notes,
+                await queries.CountBeforeAsync(ownerId, declared.OccurredOn, ct));
 
         // O previsto só é buscado quando a janela alcança o futuro: olhar um ano
         // fechado para trás não precisa de nada disso.
@@ -84,7 +100,8 @@ public sealed class MonthlyCashService(
             : new HashSet<(Guid, DateOnly)>();
 
         return Result.Success(Compose(
-            start, end, current, opening, buckets, forecast, overdue, recurring, generated));
+            start, end, current, opening, buckets, forecast, overdue, recurring, generated,
+            openingResponse, declared?.Competence));
     }
 
     /// <summary>
@@ -158,7 +175,9 @@ public sealed class MonthlyCashService(
         IReadOnlyList<InstallmentForecastBucket> forecast,
         OverdueTotals overdue,
         IReadOnlyList<RecurringItem> recurring,
-        IReadOnlySet<(Guid RecurringItemId, DateOnly Month)> generated)
+        IReadOnlySet<(Guid RecurringItemId, DateOnly Month)> generated,
+        CashOpeningResponse? declared = null,
+        YearMonth? declaredIn = null)
     {
         var byMonth = buckets
             .GroupBy(b => new YearMonth(b.Year, b.Month))
@@ -174,6 +193,14 @@ public sealed class MonthlyCashService(
 
         foreach (var competence in YearMonth.Range(start, end))
         {
+            // O saldo inicial entra no mês a que se refere, antes de qualquer
+            // movimento dele: é o dinheiro que já estava lá quando o mês abriu.
+            if (declaredIn == competence && declared is { } starting)
+            {
+                running += starting.Amount;
+                projected += starting.Amount;
+            }
+
             // Mês sem lançamento nenhum continua na lista: um buraco no meio da
             // série esconderia justamente o mês em que nada entrou.
             var rows = byMonth.TryGetValue(competence, out var found) ? found : [];
@@ -234,6 +261,13 @@ public sealed class MonthlyCashService(
         var totalIncome = months.Sum(m => m.Income);
         var totalExpense = months.Sum(m => m.Expense);
 
+        // Com um único mês movimentado, "melhor" e "pior" caem na mesma linha e
+        // marcam o mesmo mês como os dois — um superlativo sem nada com que
+        // comparar não informa nada, então nenhum dos dois aparece.
+        var best = IndexOfExtreme(months, best: true);
+        var worst = IndexOfExtreme(months, best: false);
+        if (best == worst) (best, worst) = (-1, -1);
+
         return new MonthlyCashResponse(
             start.ToString(),
             end.ToString(),
@@ -250,8 +284,9 @@ public sealed class MonthlyCashService(
             TotalExpectedExpense: months.Sum(m => m.ExpectedExpense),
             OverdueReceivable: overdue.Receivable,
             OverduePayable: overdue.Payable,
-            BestMonthIndex: IndexOfExtreme(months, best: true),
-            WorstMonthIndex: IndexOfExtreme(months, best: false),
+            BestMonthIndex: best,
+            WorstMonthIndex: worst,
+            Opening: declared,
             Months: months);
     }
 
